@@ -1,7 +1,3 @@
-# %% repr ----
-repr <- new_generic("repr", "x")
-
-
 # %% to_base ----
 to_base <- new_generic("to_base", "x")
 

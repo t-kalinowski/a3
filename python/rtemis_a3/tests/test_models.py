@@ -280,8 +280,15 @@ class TestA3:
                 variant=[{"position": 88}],
             )
         err = exc_info.value
-        assert len(err.errors) == 3
-        assert len(err.messages) == 3
+        # Collect-all: all three bounds violations are reported at once, each
+        # with a stable code and an RFC 6901 pointer.
+        assert len(err.issues) == 3
+        assert err.stage == 4
+        assert [(str(i.code), i.path) for i in err.issues] == [
+            ("A3E_POS_OUT_OF_BOUNDS", "/annotations/site/s1/index/0"),
+            ("A3E_POS_OUT_OF_BOUNDS", "/annotations/site/s2/index/0"),
+            ("A3E_VARIANT_OUT_OF_BOUNDS", "/annotations/variant/0/position"),
+        ]
         assert all("out of bounds" in m for m in err.messages)
 
     def test_full_valid(self):

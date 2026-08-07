@@ -1,6 +1,6 @@
 {
   "name": "@rtemis/a3",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Amino Acid Annotation (A3) format — TypeScript implementation",
   "homepage": "https://a3.rtemis.org",
   "keywords": [
@@ -45,9 +45,6 @@
     "fix": "biome check --write src tests",
     "publish:jsr": "deno publish",
     "publish:jsr:dry": "deno publish --dry-run"
-  },
-  "dependencies": {
-    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.13",

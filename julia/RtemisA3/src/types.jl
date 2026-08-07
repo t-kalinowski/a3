@@ -19,14 +19,17 @@ end
 
 struct VariantRecord
     position::Int
-    extra::Dict{String,Any}
+    extra::OrderedDict{String,Any}
 end
 
+# Annotation names are author-supplied and their order is part of the document,
+# so these are OrderedDicts: a plain Dict would make serialization order
+# nondeterministic run to run.
 struct A3Annotations
-    site::Dict{String,A3Position}
-    region::Dict{String,A3Range}
-    ptm::Dict{String,A3Index}
-    processing::Dict{String,A3Index}
+    site::OrderedDict{String,A3Position}
+    region::OrderedDict{String,A3Range}
+    ptm::OrderedDict{String,A3Index}
+    processing::OrderedDict{String,A3Index}
     variant::Vector{VariantRecord}
 end
 

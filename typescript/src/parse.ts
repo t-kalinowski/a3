@@ -66,6 +66,10 @@ export function parsePositions(text: string): ParseResult<number[]> {
  * around the dash). Ranges may be separated by commas, newlines, or tabs.
  * Empty input returns `[]`. The returned array is sorted by start position.
  *
+ * A region must span at least two residues, so `end` must be strictly greater
+ * than `start` (a single residue belongs in the `site` family). This matches
+ * the document schema's `start < end` refinement.
+ *
  * Note: this parser does not check for overlap — that's enforced by
  * {@link A3InputSchema} at the document level.
  *
@@ -93,8 +97,8 @@ export function parseRanges(text: string): ParseResult<[number, number][]> {
     if (start < 1 || end < 1) {
       return { ok: false, error: `"${part}" — positions must be ≥ 1` };
     }
-    if (end < start) {
-      return { ok: false, error: `"${part}" — end must be ≥ start` };
+    if (end <= start) {
+      return { ok: false, error: `"${part}" — end must be > start` };
     }
     out.push([start, end]);
   }

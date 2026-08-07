@@ -1,212 +1,73 @@
-import { z } from "zod";
-import { isJsonCompatible, sortRanges } from "./normalize";
+/**
+ * The {@link A3} class and the two error types.
+ *
+ * @module
+ */
+
+import type { A3Issue } from "./issues";
+import { stageOf } from "./issues";
+import { isJsonCompatible } from "./normalize";
 import { A3_SCHEMA_URI, A3_VERSION, type A3Data, type VariantData } from "./schemas";
-
-// ── Zod schemas ───────────────────────────────────────────────────────────────
-// Sub-schemas are kept module-private; only `A3InputSchema` is part of the
-// public API so consumers can use it directly with form libraries (e.g.
-// `zodResolver(A3InputSchema)` from `@hookform/resolvers/zod`).
-
-const PositionSchema = z.number().int().min(1);
-
-const PositionsSchema = z
-  .array(PositionSchema)
-  .transform((arr) => [...arr].sort((a, b) => a - b))
-  .superRefine((sorted, ctx) => {
-    for (let i = 1; i < sorted.length; i++) {
-      if (sorted[i] === sorted[i - 1]) {
-        ctx.addIssue({
-          code: "custom",
-          message: `duplicate position: ${sorted[i]}`,
-        });
-      }
-    }
-  });
-
-const RangeTupleSchema = z
-  .tuple([PositionSchema, PositionSchema])
-  .refine(([s, e]) => s < e, { message: "start must be < end" });
-
-const RangesSchema = z
-  .array(RangeTupleSchema)
-  .transform(sortRanges)
-  .superRefine((ranges, ctx) => {
-    let prev: [number, number] | undefined;
-    for (const curr of ranges) {
-      if (prev !== undefined && curr[0] <= prev[1]) {
-        ctx.addIssue({
-          code: "custom",
-          message: `ranges [${prev[0]},${prev[1]}] and [${curr[0]},${curr[1]}] overlap`,
-        });
-      }
-      prev = curr;
-    }
-  });
-
-const A3PositionSchema = z.object({
-  index: PositionsSchema,
-  type: z.string().default(""),
-});
-
-const A3RangeSchema = z.object({
-  index: RangesSchema,
-  type: z.string().default(""),
-});
-
-const A3FlexSchema = z.object({
-  index: z.union([RangesSchema, PositionsSchema]),
-  type: z.string().default(""),
-});
-
-const VariantSchema = z
-  .object({ position: PositionSchema })
-  .catchall(z.unknown())
-  .refine((v) => isJsonCompatible(v), { message: "variant fields must be JSON-compatible" });
-
-const AnnotationsSchema = z
-  .object({
-    site: z.record(z.string().min(1), A3PositionSchema).default({}),
-    region: z.record(z.string().min(1), A3RangeSchema).default({}),
-    ptm: z.record(z.string().min(1), A3FlexSchema).default({}),
-    processing: z.record(z.string().min(1), A3FlexSchema).default({}),
-    variant: z.array(VariantSchema).default([]),
-  })
-  .strict();
-
-// Official UniProt accession patterns:
-//   short:  [OPQ][0-9][A-Z0-9]{3}[0-9]                                   (6 chars)
-//   long:   [A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9]([A-Z][A-Z0-9]{2}[0-9])?   (6 or 10 chars)
-const UNIPROT_ACCESSION =
-  /^[OPQ][0-9][A-Z0-9]{3}[0-9]$|^[A-NR-Z][0-9][A-Z][A-Z0-9]{2}[0-9]([A-Z][A-Z0-9]{2}[0-9])?$/;
-
-/** Optional free-text metadata: empty is allowed; if non-empty, must be ≥ 2 chars. */
-const optionalText = (label: string) =>
-  z
-    .string()
-    .trim()
-    .default("")
-    .refine((s) => s === "" || s.length >= 2, {
-      message: `${label} must be at least 2 characters`,
-    });
-
-const MetadataSchema = z
-  .object({
-    uniprot_id: z
-      .string()
-      .trim()
-      .default("")
-      .refine((s) => s === "" || UNIPROT_ACCESSION.test(s), {
-        message: "uniprot_id must be a valid UniProt accession (e.g. P12345 or A0A0A0AAA1)",
-      }),
-    description: optionalText("description"),
-    reference: optionalText("reference"),
-    organism: optionalText("organism"),
-  })
-  .strict();
-
-export const A3InputSchema: z.ZodType<A3Data> = z
-  .object({
-    $schema: z.literal(A3_SCHEMA_URI, {
-      error: () => ({ message: `'$schema' must be '${A3_SCHEMA_URI}'` }),
-    }),
-    a3_version: z.literal(A3_VERSION, {
-      error: () => ({ message: `'a3_version' must be '${A3_VERSION}'` }),
-    }),
-    sequence: z
-      .string()
-      .min(2, "sequence must be at least 2 characters")
-      .regex(/^[A-Za-z*]+$/, "sequence must contain only amino acid letters [A-Za-z] or '*'")
-      .transform((s) => s.toUpperCase()),
-    annotations: AnnotationsSchema,
-    metadata: MetadataSchema,
-  })
-  .strict()
-  .superRefine((data, ctx) => {
-    const len = data.sequence.length;
-
-    const boundsMsg = (pos: number) =>
-      `position ${pos} is out of bounds for sequence of length ${len} (must be 1–${len})`;
-
-    const checkPos = (pos: number, path: (string | number)[]) => {
-      if (pos < 1 || pos > len) ctx.addIssue({ code: "custom", message: boundsMsg(pos), path });
-    };
-
-    const checkIndex = (index: number[] | [number, number][], basePath: (string | number)[]) => {
-      if (index.length === 0) return;
-      if (Array.isArray(index[0])) {
-        let i = 0;
-        for (const [s, e] of index as [number, number][]) {
-          checkPos(s, [...basePath, i, 0]);
-          checkPos(e, [...basePath, i, 1]);
-          i++;
-        }
-      } else {
-        let i = 0;
-        for (const pos of index as number[]) {
-          checkPos(pos, [...basePath, i]);
-          i++;
-        }
-      }
-    };
-
-    for (const [name, entry] of Object.entries(data.annotations.site)) {
-      checkIndex(entry.index, ["annotations", "site", name, "index"]);
-    }
-    for (const [name, entry] of Object.entries(data.annotations.region)) {
-      checkIndex(entry.index, ["annotations", "region", name, "index"]);
-    }
-    for (const [name, entry] of Object.entries(data.annotations.ptm)) {
-      checkIndex(entry.index, ["annotations", "ptm", name, "index"]);
-    }
-    for (const [name, entry] of Object.entries(data.annotations.processing)) {
-      checkIndex(entry.index, ["annotations", "processing", name, "index"]);
-    }
-    data.annotations.variant.forEach((v, i) => {
-      checkPos(v.position, ["annotations", "variant", i, "position"]);
-    });
-  }) as z.ZodType<A3Data>;
+import { validate } from "./validate";
 
 // ── Error classes ─────────────────────────────────────────────────────────────
 
-/** A single validation issue reported for an invalid A3 document. */
-export interface A3ValidationIssue {
-  /** Machine-readable validation issue code. */
-  readonly code: string;
-  /** Human-readable validation message. */
-  readonly message: string;
-  /** Path to the invalid field within the input value. */
-  readonly path: readonly PropertyKey[];
-}
-
 /**
- * Thrown when an A3 object fails schema validation.
+ * Thrown when an A3 document fails validation.
  *
- * The `issues` array contains the full Zod issue list and can be inspected
- * programmatically to determine exactly which fields failed and why.
+ * The {@link A3ValidationError.issues} array carries every issue found in the
+ * earliest failing validation stage. Each issue's `code` and `path` are
+ * contractual and identical across the R, Python, Julia, TypeScript, and Rust
+ * implementations; its `message` is not.
+ *
+ * @example
+ * ```ts
+ * try {
+ *   A3.fromJSONText(text);
+ * } catch (e) {
+ *   if (e instanceof A3ValidationError) {
+ *     for (const issue of e.issues) console.error(issue.code, issue.path);
+ *   }
+ * }
+ * ```
  */
 export class A3ValidationError extends Error {
-  /** Full list of Zod validation issues for programmatic inspection. */
-  readonly issues: readonly A3ValidationIssue[];
+  /** Every issue found in the earliest failing validation stage. */
+  readonly issues: readonly A3Issue[];
 
   /**
-   * Create an error from a failed schema validation result.
-   * @param zodError - The Zod error produced by a failed `safeParse` call.
+   * Create an error from a non-empty issue list.
+   * @param issues - The issues produced by {@link validate}.
    */
-  constructor(zodError: {
-    readonly message: string;
-    readonly issues: readonly A3ValidationIssue[];
-  }) {
-    super(zodError.message);
+  constructor(issues: readonly A3Issue[]) {
+    const detail = issues
+      .map((i) => `  [${i.code}] ${i.path || "<document>"}: ${i.message}`)
+      .join("\n");
+    super(`A3 validation failed with ${issues.length} issue(s):\n${detail}`);
     this.name = "A3ValidationError";
-    this.issues = zodError.issues;
+    this.issues = issues;
+  }
+
+  /**
+   * The validation stage the reported issues belong to, or `undefined` when the
+   * issue list is empty.
+   *
+   * Every issue in one error comes from the same stage, because validation
+   * short-circuits at a stage boundary.
+   */
+  get stage(): number | undefined {
+    const first = this.issues[0];
+    return first === undefined ? undefined : stageOf(first);
   }
 }
 
 /**
  * Thrown when raw input cannot be parsed before validation begins.
  *
- * Wraps `JSON.parse` failures and file I/O errors. For schema violations
- * on otherwise-valid JSON, see {@link A3ValidationError}.
+ * Wraps `JSON.parse` failures and file I/O errors. A file that is not JSON has
+ * no path to report and nothing further to collect, which is why it is a
+ * distinct type rather than an issue. For rule violations on otherwise-valid
+ * JSON, see {@link A3ValidationError}.
  */
 export class A3ParseError extends Error {
   /**
@@ -226,7 +87,9 @@ export class A3ParseError extends Error {
  * An immutable, validated A3 (Amino Acid Annotation) object.
  *
  * Construct via the constructor or the static helpers {@link A3.fromData} /
- * {@link A3.fromJSONText}. For file I/O use {@link readJSON} / {@link writeJSON}.
+ * {@link A3.fromJSONText}. For file I/O use `readJSON` / `writeJSON`. To
+ * validate without throwing — for a form or a live-validation panel — call
+ * {@link validate} directly and read its issue list.
  *
  * @example
  * ```ts
@@ -240,20 +103,21 @@ export class A3 {
   readonly #data: A3Data;
 
   /**
-   * Parse and validate raw input as an A3 object.
+   * Validate raw input as an A3 document.
    * @param input - Any value; typically a plain object parsed from JSON.
-   * @throws {@link A3ValidationError} if the input fails schema validation.
+   * @throws {@link A3ValidationError} carrying every issue in the failing stage.
    */
   constructor(input: unknown) {
-    const result = A3InputSchema.safeParse(input);
-    if (!result.success) throw new A3ValidationError(result.error);
-    this.#data = Object.freeze(result.data);
+    const { data, issues } = validate(input);
+    if (data === null) throw new A3ValidationError(issues);
+    assertVariantsAreJsonCompatible(data);
+    this.#data = Object.freeze(data);
   }
 
   // ── Static constructors ───────────────────────────────────────────────────
 
   /**
-   * Parse and validate a plain data object as an A3 instance.
+   * Validate a plain data object as an A3 instance.
    * @param data - Typically the result of `JSON.parse` or a hand-built object.
    * @throws {@link A3ValidationError} if validation fails.
    */
@@ -265,7 +129,7 @@ export class A3 {
    * Parse a JSON string and validate it as an A3 instance.
    * @param text - Raw JSON string.
    * @throws {@link A3ParseError} if the string is not valid JSON.
-   * @throws {@link A3ValidationError} if the parsed object fails validation.
+   * @throws {@link A3ValidationError} if the parsed value fails validation.
    */
   static fromJSONText(text: string): A3 {
     let parsed: unknown;
@@ -276,8 +140,6 @@ export class A3 {
     }
     return new A3(parsed);
   }
-
-  // readJSON is provided in io.ts and re-exported from index.ts
 
   // ── Accessors ─────────────────────────────────────────────────────────────
 
@@ -321,7 +183,6 @@ export class A3 {
   /**
    * Return the canonical data object for JSON serialization.
    * Called automatically by JSON.stringify — do not return a string here.
-   * Envelope fields ($schema, a3_version) are always emitted first.
    */
   toJSON(): A3Data {
     return { ...this.#data, $schema: A3_SCHEMA_URI, a3_version: A3_VERSION };
@@ -345,4 +206,31 @@ export class A3 {
     const label = id ? ` [${id}]` : "";
     return `A3${label} { length: ${this.length}, sequence: "${preview}" }`;
   }
+}
+
+/**
+ * Reject variant members that cannot survive serialization.
+ *
+ * A variant record is open, so its members are preserved verbatim — but a
+ * function, a symbol, or a class instance would be silently dropped or mangled
+ * by `JSON.stringify`, producing a document that does not round-trip.
+ *
+ * This is a constructor-path guard, not a validation rule: no such value can
+ * come out of `JSON.parse`, so it has no A3 issue code and cannot appear in the
+ * conformance corpus. It exists because TypeScript, unlike the other four
+ * implementations, lets a caller hand a live JavaScript object straight to the
+ * constructor. A `TypeError` is the idiomatic response to a value of the wrong
+ * kind.
+ */
+function assertVariantsAreJsonCompatible(data: A3Data): void {
+  data.annotations.variant.forEach((record, i) => {
+    for (const [key, value] of Object.entries(record)) {
+      if (!isJsonCompatible(value)) {
+        throw new TypeError(
+          `annotations.variant[${i}].${key} is not JSON-compatible: ${String(value)}. ` +
+            `A variant record's members must be JSON values.`,
+        );
+      }
+    }
+  });
 }

@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - typescript/**
+      - spec/conformance/**
   push:
     branches:
       - main
     paths:
       - typescript/**
+      - spec/conformance/**
 
 permissions:
   contents: read

@@ -8,8 +8,16 @@
  * @module
  */
 
-export type { A3ValidationIssue } from "./a3";
-export { A3, A3InputSchema, A3ParseError, A3ValidationError } from "./a3";
+export { A3, A3ParseError, A3ValidationError } from "./a3";
+export type { A3Issue, A3IssueCode, A3Stage } from "./issues";
+export {
+  A3_ISSUE_CODES,
+  A3_ISSUE_STAGES,
+  escapeToken,
+  pointer,
+  resolvePointer,
+  stageOf,
+} from "./issues";
 export type { ParsedIndex, ParseResult } from "./parse";
 export {
   formatPositions,
@@ -27,3 +35,5 @@ export type {
   VariantData,
 } from "./schemas";
 export { A3_SCHEMA_URI, A3_VERSION } from "./schemas";
+export type { ValidationResult } from "./validate";
+export { validate } from "./validate";

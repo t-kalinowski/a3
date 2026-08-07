@@ -77,12 +77,43 @@ variants_at(a, 5)         # Vector{VariantRecord}
 
 ## Validation
 
-All inputs are validated in two stages:
+Validation is **collect-all**. A document is checked in four stages and every
+issue in the earliest failing stage is reported at once:
 
-1. **Structural** — types, non-empty names, `start < end` for ranges, no overlapping ranges, sequence characters
-2. **Contextual** — all positions/ranges within `1..length(sequence)`
+1. **Envelope** — the document is an object and declares itself A3 1.0.0
+2. **Structural** — types, shapes, required members, charset, annotation names
+3. **Intra-field** — positions >= 1 and deduplicated, ranges ordered and disjoint
+4. **Contextual** — bounds against `length(sequence)`, variant `from` residue
 
-Errors raise `A3ValidationError` with a message that includes the field path and a concrete description of the violation.
+Stages short-circuit: a stage runs only if every earlier stage produced no
+issue. That is correctness, not optimization — a document whose `sequence`
+failed Stage 2 has no known length, so Stage 4 would emit one spurious
+out-of-bounds issue per annotated position.
+
+Each issue carries a stable `code` and an
+[RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer `path`, both of
+which are identical across the R, Python, Julia, TypeScript, and Rust
+implementations of A3. Messages are for humans and are not contractual.
+
+```julia
+using RtemisA3
+
+try
+    a3 = a3_from_json(text)
+catch e
+    e isa A3ValidationError || rethrow()
+    println(stage(e))                    # 4
+    for issue in e.issues
+        println(issue.code, " ", issue.path)
+        # A3E_POS_OUT_OF_BOUNDS /annotations/site/Active site/index/2
+    end
+end
+```
+
+`validate(raw)` is the non-throwing counterpart, returning
+`(a3_or_nothing, issues)`. Reading a **document** collects every issue;
+`create_a3` fails fast with one message. That split is deliberate: see
+[`spec/README.md`](../spec/README.md).
 
 ## API Reference
 

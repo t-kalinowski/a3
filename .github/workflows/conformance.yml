@@ -1,0 +1,158 @@
+name: Conformance
+
+# The paper's central claim is one specification, five conforming
+# implementations. This workflow is that claim, mechanized: all five run the
+# same corpus, from the same commit, in one job. Per-language CI also runs its
+# own conformance test, but only this job proves they agree *simultaneously*.
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  corpus-is-generated:
+    name: Corpus matches its generator
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spec/conformance/generator
+
+      # A case file and its manifest entry have to agree, and 87 files kept in
+      # sync by hand will not stay in sync. Regenerating must be a no-op.
+      #
+      # The generator produces each `normalized` companion by running the
+      # reference implementation, so this job also fails if a change to
+      # rust/ altered normalization without the corpus being updated.
+      - name: Regenerate and diff
+        run: |
+          cargo run --quiet --manifest-path spec/conformance/generator/Cargo.toml
+          if ! git diff --exit-code --stat spec/conformance; then
+            echo "::error::spec/conformance is out of date. Run 'just corpus' and commit the result."
+            exit 1
+          fi
+
+  conformance:
+    name: All five implementations
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+
+      # ── Toolchains ──────────────────────────────────────────────────────
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: python/rtemis_a3/uv.lock
+
+      - uses: pnpm/action-setup@v5
+        with:
+          package_json_file: typescript/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: typescript/pnpm-lock.yaml
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+
+      - uses: julia-actions/cache@v3
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: release
+          use-public-rspm: true
+          extra-repositories: https://rtemis-org.r-universe.dev
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          working-directory: r
+          extra-packages: any::devtools
+          needs: check
+          cache-version: 1
+
+      # ── Install ─────────────────────────────────────────────────────────
+      - name: Install Python package
+        working-directory: python/rtemis_a3
+        run: uv sync --frozen --all-groups
+
+      - name: Install TypeScript package
+        working-directory: typescript
+        run: pnpm install --frozen-lockfile
+
+      - name: Instantiate Julia package
+        run: julia --project=julia/RtemisA3 -e 'using Pkg; Pkg.instantiate()'
+
+      # ── Run the corpus, five ways ───────────────────────────────────────
+      # Each step runs even if an earlier one failed, so one report shows every
+      # implementation that disagrees rather than only the first.
+      - name: Rust
+        id: rust
+        if: always()
+        working-directory: rust
+        run: cargo test --test conformance
+
+      - name: Python
+        id: python
+        if: always()
+        working-directory: python/rtemis_a3
+        run: uv run pytest tests/test_conformance.py -q
+
+      - name: TypeScript
+        id: typescript
+        if: always()
+        working-directory: typescript
+        run: npx vitest run tests/conformance.test.ts
+
+      - name: Julia
+        id: julia
+        if: always()
+        working-directory: julia/RtemisA3
+        run: julia --project=. -e 'using Pkg; Pkg.test()'
+
+      - name: R
+        id: r
+        if: always()
+        working-directory: r
+        run: Rscript -e "devtools::load_all(quiet = TRUE); devtools::test(filter = 'conformance', stop_on_failure = TRUE)"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "| Implementation | Conforms |"
+            echo "|---|---|"
+            echo "| Rust       | ${{ steps.rust.outcome == 'success' && '✅' || '❌' }} |"
+            echo "| Python     | ${{ steps.python.outcome == 'success' && '✅' || '❌' }} |"
+            echo "| TypeScript | ${{ steps.typescript.outcome == 'success' && '✅' || '❌' }} |"
+            echo "| Julia      | ${{ steps.julia.outcome == 'success' && '✅' || '❌' }} |"
+            echo "| R          | ${{ steps.r.outcome == 'success' && '✅' || '❌' }} |"
+          } >> "$GITHUB_STEP_SUMMARY"

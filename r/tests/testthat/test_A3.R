@@ -204,16 +204,17 @@ test_that("A3Processing fails with invalid index or type", {
 # %% A3Variant ----
 test_that("A3Variant succeeds with valid position and info", {
   x <- A3Variant(
-    position = A3Position(data = c(3L)),
+    position = 3L,
     info = list(field_a = "alpha", field_b = 123L)
   )
   expect_s7_class(x, A3Variant)
+  expect_identical(x@position, 3L)
 })
 
 test_that("A3Variant fails with invalid position or info", {
   expect_error(
     A3Variant(
-      position = A3Position(data = c(1L, 3L)),
+      position = c(1L, 3L),
       info = list(field_a = "alpha")
     ),
     "Variant position must be a single integer."
@@ -274,7 +275,7 @@ test_that("A3Annotation succeeds with valid annotations", {
       )
     ),
     variant = list(A3Variant(
-      position = A3Position(data = c(15L)),
+      position = 15L,
       info = list(mutation = "R15H")
     ))
   )
@@ -413,7 +414,7 @@ test_that("A3 can be instantiated with valid sequence and annotations", {
         )
       ),
       variant = list(A3Variant(
-        position = A3Position(data = c(15L)),
+        position = 15L,
         info = list(mutation = "R15H")
       ))
     )
@@ -496,7 +497,7 @@ test_that("to_json produces valid JSON with canonical structure", {
       `Signal peptide` = annotation_range(rbind(c(8L, 12L)))
     ),
     variant = list(
-      annotation_variant(15, info = list(from = "R", to = "H"))
+      annotation_variant(15, info = list(from = "V", to = "H"))
     ),
     uniprot_id = "P12345",
     description = "Example protein",
@@ -529,7 +530,7 @@ test_that("A3from_json round-trips to_json with zero loss", {
       `Signal peptide` = annotation_range(rbind(c(8L, 12L)))
     ),
     variant = list(
-      annotation_variant(15, info = list(from = "R", to = "H"))
+      annotation_variant(15, info = list(from = "V", to = "H"))
     ),
     uniprot_id = "P12345",
     description = "Example protein",
@@ -580,8 +581,8 @@ test_that("A3from_json round-trips to_json with zero loss", {
 
   # Variant annotations
   expect_identical(
-    restored@annotations@variant[[1]]@position@data,
-    original@annotations@variant[[1]]@position@data
+    restored@annotations@variant[[1]]@position,
+    original@annotations@variant[[1]]@position
   )
   expect_identical(
     restored@annotations@variant[[1]]@info$from,
@@ -627,7 +628,11 @@ test_that("A3from_json rejects missing metadata", {
       "variant": []
     }
   }'
-  expect_error(A3from_json(json), "metadata")
+  # `metadata` is optional: the schema requires only $schema, a3_version, and
+  # sequence, and every member defaults to the empty string.
+  x <- A3from_json(json)
+  expect_s7_class(x, A3)
+  expect_identical(x@metadata@uniprot_id, "")
 })
 
 test_that("A3from_json reports duplicate positions with annotation path", {
@@ -649,32 +654,82 @@ test_that("A3from_json reports duplicate positions with annotation path", {
     },
     "metadata": {}
   }'
-  expect_error(
-    A3from_json(json),
-    "annotations\\.ptm\\.Phosphorylation\\.index.*duplicate positions.*7"
+  issues <- tryCatch(A3from_json(json), a3_validation_error = function(e) {
+    e[["issues"]]
+  })
+  expect_identical(
+    lapply(issues, function(i) c(i[["code"]], i[["path"]])),
+    list(c("A3E_POS_DUPLICATE", "/annotations/ptm/Phosphorylation/index"))
   )
 })
 
-test_that("A3from_json accepts pre-parsed list", {
-  lst <- list(
-    `$schema` = "https://schema.rtemis.org/a3/v1/schema.json",
-    a3_version = "1.0.0",
-    sequence = "MKTAYIAKQRQISFVK",
-    annotations = list(
-      site = list(
-        `Active site` = list(index = c(3L, 5L), type = "activeSite")
-      ),
-      region = list(),
-      ptm = list(),
-      processing = list(),
-      variant = list()
-    ),
-    metadata = list(uniprot_id = "P12345")
-  )
-  x <- A3from_json(lst)
+test_that("A3from_json parses JSON text", {
+  json <- '{
+    "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+    "a3_version": "1.0.0",
+    "sequence": "MKTAYIAKQRQISFVK",
+    "annotations": {
+      "site": { "Active site": { "index": [3, 5], "type": "activeSite" } }
+    },
+    "metadata": { "uniprot_id": "P12345" }
+  }'
+  x <- A3from_json(json)
   expect_s7_class(x, A3)
-  expect_identical(x@annotations@site$`Active site`@type, "activeSite")
+  expect_identical(x@annotations@site[["Active site"]]@type, "activeSite")
   expect_identical(x@metadata@uniprot_id, "P12345")
+})
+
+test_that("validate_A3json returns issues instead of throwing", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines(
+    '{
+      "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+      "a3_version": "1.0.0",
+      "sequence": "MKTAY",
+      "annotations": { "site": { "s": { "index": [99] } } }
+    }',
+    tmp
+  )
+  on.exit(unlink(tmp))
+
+  issues <- validate_A3json(tmp)
+  expect_s3_class(issues, "data.frame")
+  expect_identical(nrow(issues), 1L)
+  expect_identical(issues[["code"]], "A3E_POS_OUT_OF_BOUNDS")
+  expect_identical(issues[["path"]], "/annotations/site/s/index/0")
+  expect_identical(issues[["stage"]], 4L)
+
+  # And zero rows for a valid document.
+  valid <- tempfile(fileext = ".json")
+  on.exit(unlink(valid), add = TRUE)
+  write_A3json(create_A3("MKTAY"), valid)
+  expect_identical(nrow(validate_A3json(valid)), 0L)
+})
+
+test_that("read_A3json aborts once with every issue in the failing stage", {
+  tmp <- tempfile(fileext = ".json")
+  writeLines(
+    '{
+      "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+      "a3_version": "1.0.0",
+      "sequence": "MKTAY",
+      "annotations": { "site": { "a": { "index": [99] }, "b": { "index": [98] } } }
+    }',
+    tmp
+  )
+  on.exit(unlink(tmp))
+
+  # Collect-all: both problems are reported at once, and the issue list is
+  # reachable from the condition object rather than only from the message.
+  issues <- tryCatch(
+    read_A3json(tmp, verbosity = 0L),
+    a3_validation_error = function(e) e[["issues"]]
+  )
+  expect_identical(length(issues), 2L)
+  expect_identical(
+    vapply(issues, function(i) i[["path"]], character(1L)),
+    c("/annotations/site/a/index/0", "/annotations/site/b/index/0")
+  )
 })
 
 test_that("read_A3json reports valid A3 version", {

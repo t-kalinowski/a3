@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "site": {},
+    "region": {
+      "r": {
+        "index": [
+          [
+            3,
+            10
+          ],
+          [
+            15,
+            22
+          ]
+        ],
+        "type": ""
+      }
+    },
+    "ptm": {},
+    "processing": {},
+    "variant": []
+  },
+  "metadata": {
+    "uniprot_id": "",
+    "description": "",
+    "reference": "",
+    "organism": ""
+  }
+}

@@ -213,15 +213,21 @@ A3Processing <- new_class(
 
 
 # %% A3Variant ----
+# `position` is a plain integer, not an `A3Position`: an A3Position is a whole
+# index object, and wrapping one integer in it bought a length-1 assertion at the
+# cost of surprising every reader and every accessor.
 A3Variant <- new_class(
   "A3Variant",
   properties = list(
-    position = A3Position,
+    position = class_integer,
     info = class_list
   ),
   validator = function(self) {
-    if (length(self@position@data) != 1) {
+    if (length(self@position) != 1L) {
       cli::cli_abort("Variant position must be a single integer.")
+    }
+    if (self@position < 1L) {
+      cli::cli_abort("Variant position must be >= 1; positions are 1-based.")
     }
   }
 )
@@ -238,31 +244,37 @@ A3Annotation <- new_class(
     variant = class_list
   ),
   validator = function(self) {
+    # `vapply(..., logical(1L))` guarantees a logical vector; `sapply()` returns
+    # a list for a zero-length input, and `all(list())` is TRUE only by accident.
+    all_inherit <- function(lst, cls) {
+      length(lst) == 0L ||
+        all(vapply(lst, S7_inherits, logical(1L), class = cls))
+    }
     check_names <- function(lst, category) {
       nms <- names(lst)
-      if (length(lst) > 0 && (is.null(nms) || any(!nzchar(nms)))) {
+      if (length(lst) > 0L && (is.null(nms) || any(!nzchar(nms)))) {
         cli::cli_abort(
           "All {category} annotation names must be non-empty strings."
         )
       }
     }
-    if (!all(sapply(self@site, S7_inherits, A3Site))) {
+    if (!all_inherit(self@site, A3Site)) {
       cli::cli_abort("All site annotations must be A3Site objects.")
     }
     check_names(self@site, "site")
-    if (!all(sapply(self@region, S7_inherits, A3Region))) {
+    if (!all_inherit(self@region, A3Region)) {
       cli::cli_abort("All region annotations must be A3Region objects.")
     }
     check_names(self@region, "region")
-    if (!all(sapply(self@ptm, S7_inherits, A3PTM))) {
+    if (!all_inherit(self@ptm, A3PTM)) {
       cli::cli_abort("All PTM annotations must be A3PTM objects.")
     }
     check_names(self@ptm, "ptm")
-    if (!all(sapply(self@processing, S7_inherits, A3Processing))) {
+    if (!all_inherit(self@processing, A3Processing)) {
       cli::cli_abort("All processing annotations must be A3Processing objects.")
     }
     check_names(self@processing, "processing")
-    if (!all(sapply(self@variant, S7_inherits, A3Variant))) {
+    if (!all_inherit(self@variant, A3Variant)) {
       cli::cli_abort("All variant annotations must be A3Variant objects.")
     }
   }
@@ -304,9 +316,11 @@ method(to_base, A3Annotation) <- function(x) {
       )
     }),
     variant = lapply(x@variant, function(v) {
-      out <- list(position = v@position@data)
+      out <- list(position = v@position)
+      # Single-bracket assignment, not double: `out[[nm]] <- NULL` would delete
+      # the element rather than store a JSON null, dropping it from the output.
       for (nm in names(v@info)) {
-        out[[nm]] <- v@info[[nm]]
+        out[nm] <- list(v@info[[nm]])
       }
       out
     })
@@ -432,7 +446,7 @@ A3 <- new_class(
 
     # Validate variant annotations
     for (variant in self@annotations@variant) {
-      if (variant@position@data > seq_length) {
+      if (variant@position > seq_length) {
         cli::cli_abort(
           "Variant annotation position must be within the sequence length."
         )
@@ -689,7 +703,9 @@ concat <- function(x) {
 #' annotation_position(c(5L, 17L), type = "active site")
 annotation_position <- function(x, type = NULL) {
   check_optional_scalar_character(type)
-  if (is.null(type)) type <- ""
+  if (is.null(type)) {
+    type <- ""
+  }
   list(
     index = A3Position(data = clean_int(x)),
     type = type
@@ -717,7 +733,9 @@ annotation_position <- function(x, type = NULL) {
 #' annotation_range(rbind(c(3L, 10L), c(15L, 22L)), type = "repeat")
 annotation_range <- function(x, type = NULL) {
   check_optional_scalar_character(type)
-  if (is.null(type)) type <- ""
+  if (is.null(type)) {
+    type <- ""
+  }
   list(
     index = A3Range(data = clean_int(x)),
     type = type
@@ -745,7 +763,7 @@ annotation_range <- function(x, type = NULL) {
 annotation_variant <- function(x, info = list()) {
   check_inherits(info, "list")
   A3Variant(
-    position = A3Position(clean_int(x)),
+    position = clean_int(x),
     info = info
   )
 }
@@ -813,10 +831,18 @@ create_A3 <- function(
   check_optional_scalar_character(description)
   check_optional_scalar_character(reference)
   check_optional_scalar_character(organism)
-  if (is.null(uniprot_id))  uniprot_id  <- ""
-  if (is.null(description)) description <- ""
-  if (is.null(reference))   reference   <- ""
-  if (is.null(organism))    organism    <- ""
+  if (is.null(uniprot_id)) {
+    uniprot_id <- ""
+  }
+  if (is.null(description)) {
+    description <- ""
+  }
+  if (is.null(reference)) {
+    reference <- ""
+  }
+  if (is.null(organism)) {
+    organism <- ""
+  }
   site <- lapply(site, function(a) {
     if (S7_inherits(a, A3Site)) {
       a
@@ -876,8 +902,6 @@ create_A3 <- function(
 #' @keywords internal
 #' @noRd
 method(to_json, A3) <- function(x, pretty = TRUE, ...) {
-  check_dependencies("jsonlite")
-
   feature_to_list <- function(feature) {
     idx <- feature@index
     if (S7_inherits(idx, A3Range)) {
@@ -895,11 +919,28 @@ method(to_json, A3) <- function(x, pretty = TRUE, ...) {
     )
   }
 
+  # A variant record is open, so its members round-trip verbatim — including
+  # nested objects, arrays, and nulls. R has no scalar type, so every length-1
+  # atomic has to be unboxed explicitly at every depth, or `{"pmid": 12345}`
+  # would come back out as `{"pmid": [12345]}`.
+  unbox_deep <- function(val) {
+    if (is.null(val)) {
+      return(NULL)
+    }
+    if (is.list(val)) {
+      out <- lapply(val, unbox_deep)
+      names(out) <- names(val)
+      return(out)
+    }
+    if (is.atomic(val) && length(val) == 1L) jsonlite::unbox(val) else val
+  }
+
   variant_to_list <- function(v) {
-    out <- list(position = jsonlite::unbox(as.integer(v@position@data)))
+    out <- list(position = jsonlite::unbox(as.integer(v@position)))
+    # Single-bracket assignment, not double: `out[[nm]] <- NULL` would delete
+    # the element rather than emit a JSON null, dropping it from the round-trip.
     for (nm in names(v@info)) {
-      val <- v@info[[nm]]
-      out[[nm]] <- if (length(val) == 1) jsonlite::unbox(val) else val
+      out[nm] <- list(unbox_deep(v@info[[nm]]))
     }
     out
   }
@@ -929,227 +970,174 @@ method(to_json, A3) <- function(x, pretty = TRUE, ...) {
       organism = jsonlite::unbox(x@metadata@organism)
     )
   )
-  jsonlite::toJSON(lst, pretty = pretty)
+  jsonlite::toJSON(lst, pretty = pretty, null = "null")
+}
+
+
+# %% .a3_parse_json ----
+#' Parse A3 JSON text into a raw nested list
+#'
+#' All simplification is switched off so that the raw validator sees the
+#' document exactly as written: objects stay named lists, arrays stay unnamed
+#' lists, and a one-element array does not collapse into a scalar.
+#'
+#' @param text Character scalar: JSON text.
+#'
+#' @return List: Raw parsed JSON.
+#'
+#' @author EDG
+#' @keywords internal
+#' @noRd
+.a3_parse_json <- function(text) {
+  tryCatch(
+    jsonlite::fromJSON(
+      text,
+      simplifyVector = FALSE,
+      simplifyDataFrame = FALSE,
+      simplifyMatrix = FALSE
+    ),
+    error = function(err) {
+      # A file that is not JSON has no path to report and nothing further to
+      # collect, so it is a single fatal error rather than a validation issue.
+      cli::cli_abort(
+        c(
+          "Input is not valid JSON.",
+          "x" = conditionMessage(err),
+          "i" = "Check the file with a JSON linter before validating it as A3."
+        ),
+        class = c("a3_parse_error", "rtemis_error")
+      )
+    }
+  )
+}
+
+
+# %% .a3_abort_issues ----
+#' Abort once, listing every issue
+#'
+#' The issue list is attached to the condition object so that a caller can reach
+#' it programmatically instead of parsing the message.
+#'
+#' @param issues List: Issues from `validate_a3_raw()`.
+#' @param what Character scalar: What was being validated, for the headline.
+#'
+#' @return Called for its side effect.
+#'
+#' @author EDG
+#' @keywords internal
+#' @noRd
+.a3_abort_issues <- function(issues, what) {
+  stage <- .A3_ISSUE_STAGES[[issues[[1L]][["code"]]]]
+  bullets <- vapply(
+    issues,
+    function(issue) {
+      where <- if (nzchar(issue[["path"]])) issue[["path"]] else "<document>"
+      paste0(
+        "{.strong ",
+        issue[["code"]],
+        "} ",
+        where,
+        ": ",
+        issue[["message"]]
+      )
+    },
+    character(1L)
+  )
+  names(bullets) <- rep("x", length(bullets))
+  cli::cli_abort(
+    c(
+      "{what} is not a valid A3 document: {length(issues)} issue{?s} at stage {stage}.",
+      bullets
+    ),
+    class = c("a3_validation_error", "rtemis_error"),
+    issues = issues
+  )
+}
+
+
+# %% validate_A3json ----
+#' Validate an A3 JSON file without throwing
+#'
+#' Returns every validation issue found in the earliest failing stage, as a data
+#' frame. An empty data frame means the document is valid. Use this when you
+#' want to present issues in a form or a report; use [read_A3json()] when you
+#' want the object and an error if it cannot be built.
+#'
+#' Each issue carries a stable `code` and an RFC 6901 JSON Pointer `path`, both
+#' of which are identical across the R, Python, Julia, TypeScript, and Rust
+#' implementations of A3. The `message` is for humans and is not contractual.
+#'
+#' @param filepath Character scalar: Path to a JSON file.
+#'
+#' @return Data frame with columns `code`, `stage`, `path`, and `message`, with
+#' zero rows when the document is valid.
+#'
+#' @author EDG
+#' @export
+#'
+#' @examples
+#' a3 <- create_A3("MAEPRQEFEVMEDHAGTYGLGDRK", uniprot_id = "P10636")
+#' tmp <- tempfile(fileext = ".json")
+#' write_A3json(a3, tmp)
+#' validate_A3json(tmp) # zero rows: the document is valid
+#' unlink(tmp)
+validate_A3json <- function(filepath) {
+  check_scalar_character(filepath, arg_name = "filepath")
+  if (!file.exists(filepath)) {
+    cli::cli_abort("File {.file {filepath}} does not exist.")
+  }
+  text <- paste(readLines(filepath, warn = FALSE), collapse = "\n")
+  issues <- validate_a3_raw(.a3_parse_json(text))[["issues"]]
+  .a3_issues_to_df(issues)
+}
+
+
+# %% .a3_issues_to_df ----
+#' Convert an issue list to a data frame
+#'
+#' @param issues List: Issues from `validate_a3_raw()`.
+#'
+#' @return Data frame with columns `code`, `stage`, `path`, and `message`.
+#'
+#' @author EDG
+#' @keywords internal
+#' @noRd
+.a3_issues_to_df <- function(issues) {
+  data.frame(
+    code = vapply(issues, function(i) i[["code"]], character(1L)),
+    stage = vapply(
+      issues,
+      function(i) .A3_ISSUE_STAGES[[i[["code"]]]],
+      integer(1L)
+    ),
+    path = vapply(issues, function(i) i[["path"]], character(1L)),
+    message = vapply(issues, function(i) i[["message"]], character(1L)),
+    stringsAsFactors = FALSE
+  )
 }
 
 
 # %% A3from_json ----
-#' Create an A3 object from a JSON string or parsed list
+#' Create an A3 object from a JSON string
 #'
-#' Accepts canonical A3 JSON (with `index`/`type` fields per annotation) and
-#' legacy bare-array format (positions as flat arrays, ranges as arrays of arrays).
+#' Runs the four validation stages and aborts once with every issue found in the
+#' earliest failing stage.
 #'
-#' @param x Character scalar (JSON string) or named list (pre-parsed JSON).
-#' @param ... Additional arguments (currently unused)
+#' @param x Character scalar: JSON string.
+#' @param ... Additional arguments (currently unused).
 #'
-#' @return A3 object
+#' @return `A3` object.
 #'
 #' @author EDG
 #' @keywords internal
 #' @noRd
 A3from_json <- function(x, ...) {
-  check_dependencies("jsonlite")
-  if (is.character(x)) {
-    x <- jsonlite::fromJSON(
-      x,
-      simplifyVector = TRUE,
-      simplifyDataFrame = FALSE,
-      simplifyMatrix = FALSE
-    )
+  check_scalar_character(x, arg_name = "x")
+  result <- validate_a3_raw(.a3_parse_json(x))
+  if (length(result[["issues"]]) > 0L) {
+    .a3_abort_issues(result[["issues"]], "Input")
   }
-
-  # Validate required envelope fields
-  schema_field <- x[["$schema"]]
-  if (is.null(schema_field)) {
-    cli::cli_abort("JSON input missing required field {.field $schema}.")
-  }
-  if (schema_field != .A3_SCHEMA_URI) {
-    cli::cli_abort(
-      "Field {.field $schema} must be {.val {.A3_SCHEMA_URI}}, got {.val {schema_field}}."
-    )
-  }
-  version_field <- x[["a3_version"]]
-  if (is.null(version_field)) {
-    cli::cli_abort("JSON input missing required field {.field a3_version}.")
-  }
-  if (version_field != .A3_VERSION) {
-    cli::cli_abort(
-      "Field {.field a3_version} must be {.val {.A3_VERSION}}, got {.val {version_field}}."
-    )
-  }
-  if (is.null(x[["sequence"]])) {
-    cli::cli_abort("JSON input missing required field {.field sequence}.")
-  }
-  if (is.null(x[["annotations"]])) {
-    cli::cli_abort("JSON input missing required field {.field annotations}.")
-  }
-  if (is.null(x[["metadata"]])) {
-    cli::cli_abort("JSON input missing required field {.field metadata}.")
-  }
-
-  sequence <- x[["sequence"]]
-  annotations <- x[["annotations"]]
-
-  parse_position_index <- function(idx_data, path) {
-    idx <- as.integer(idx_data)
-    dup <- unique(idx[duplicated(idx)])
-    if (length(dup) > 0L) {
-      cli::cli_abort(
-        "Field {.field {path}} has duplicate positions: {.val {dup}}. Remove duplicates."
-      )
-    }
-
-    tryCatch(
-      A3Position(data = idx),
-      error = function(err) {
-        cli::cli_abort(
-          "Invalid position index in {.field {path}}: {conditionMessage(err)}"
-        )
-      }
-    )
-  }
-
-  parse_range_index <- function(idx_data, path) {
-    mat <- do.call(rbind, lapply(idx_data, as.integer))
-
-    tryCatch(
-      A3Range(data = mat),
-      error = function(err) {
-        cli::cli_abort(
-          "Invalid range index in {.field {path}}: {conditionMessage(err)}"
-        )
-      }
-    )
-  }
-
-  # Parse a single annotation entry (canonical {index, type} form only)
-  parse_feature <- function(
-    entry,
-    feature_class,
-    annotation_group,
-    annotation_name
-  ) {
-    if (!is.list(entry) || is.null(entry[["index"]])) {
-      cli::cli_abort(
-        "Each annotation entry must be an object with 'index' and 'type' fields."
-      )
-    }
-    idx_data <- entry[["index"]]
-    type <- if (is.null(entry[["type"]])) "" else entry[["type"]]
-    index_path <- paste0(
-      "annotations.",
-      annotation_group,
-      ".",
-      annotation_name,
-      ".index"
-    )
-
-    # List of 2-element vectors → range pairs; plain vector → positions
-    if (is.list(idx_data)) {
-      index <- parse_range_index(idx_data, index_path)
-    } else {
-      index <- parse_position_index(idx_data, index_path)
-    }
-
-    feature_class(index = index, type = type)
-  }
-
-  site <- if (!is.null(annotations[["site"]])) {
-    Map(
-      parse_feature,
-      entry = annotations[["site"]],
-      annotation_name = names(annotations[["site"]]),
-      MoreArgs = list(
-        feature_class = A3Site,
-        annotation_group = "site"
-      )
-    )
-  } else {
-    list()
-  }
-
-  region <- if (!is.null(annotations[["region"]])) {
-    Map(
-      parse_feature,
-      entry = annotations[["region"]],
-      annotation_name = names(annotations[["region"]]),
-      MoreArgs = list(
-        feature_class = A3Region,
-        annotation_group = "region"
-      )
-    )
-  } else {
-    list()
-  }
-
-  ptm <- if (!is.null(annotations[["ptm"]])) {
-    Map(
-      parse_feature,
-      entry = annotations[["ptm"]],
-      annotation_name = names(annotations[["ptm"]]),
-      MoreArgs = list(
-        feature_class = A3PTM,
-        annotation_group = "ptm"
-      )
-    )
-  } else {
-    list()
-  }
-
-  processing <- if (!is.null(annotations[["processing"]])) {
-    Map(
-      parse_feature,
-      entry = annotations[["processing"]],
-      annotation_name = names(annotations[["processing"]]),
-      MoreArgs = list(
-        feature_class = A3Processing,
-        annotation_group = "processing"
-      )
-    )
-  } else {
-    list()
-  }
-
-  # Parse variants
-  variants_data <- annotations[["variant"]]
-  variant <- if (is.null(variants_data) || length(variants_data) == 0) {
-    list()
-  } else if (is.data.frame(variants_data)) {
-    lapply(seq_len(nrow(variants_data)), function(i) {
-      row <- as.list(variants_data[i, ])
-      pos <- as.integer(row[["position"]])
-      info <- row[setdiff(names(row), "position")]
-      A3Variant(position = A3Position(data = pos), info = info)
-    })
-  } else {
-    lapply(variants_data, function(v) {
-      v <- as.list(v)
-      pos <- as.integer(v[["position"]])
-      info <- v[setdiff(names(v), "position")]
-      A3Variant(position = A3Position(data = pos), info = info)
-    })
-  }
-
-  # Parse metadata (all fields default to "")
-  meta <- x[["metadata"]]
-  null_to_empty <- function(val) if (is.null(val)) "" else val
-
-  A3(
-    sequence = A3Sequence(data = sequence),
-    annotations = A3Annotation(
-      site = site,
-      region = region,
-      ptm = ptm,
-      processing = processing,
-      variant = variant
-    ),
-    metadata = A3Metadata(
-      uniprot_id = null_to_empty(meta[["uniprot_id"]]),
-      description = null_to_empty(meta[["description"]]),
-      reference = null_to_empty(meta[["reference"]]),
-      organism = null_to_empty(meta[["organism"]])
-    )
-  )
+  result[["a3"]]
 }
 
 
@@ -1186,6 +1174,11 @@ write_A3json <- function(x, filepath, overwrite = FALSE) {
 
 #' Read `A3` object from JSON file
 #'
+#' Validation is **collect-all**: the document is checked in four stages and
+#' every issue in the earliest failing stage is reported at once, each with a
+#' stable code and an RFC 6901 JSON Pointer. Use [validate_A3json()] for a
+#' non-throwing entry point that returns the issues instead.
+#'
 #' @param filepath Character: Path to JSON file.
 #' @param verbosity Integer: if greater than 0, print messages.
 #'
@@ -1207,7 +1200,11 @@ read_A3json <- function(filepath, verbosity = 1L) {
     cli::cli_abort("File {.file {filepath}} does not exist.")
   }
   json_str <- paste(readLines(filepath, warn = FALSE), collapse = "\n")
-  obj <- A3from_json(json_str)
+  result <- validate_a3_raw(.a3_parse_json(json_str))
+  if (length(result[["issues"]]) > 0L) {
+    .a3_abort_issues(result[["issues"]], basename(filepath))
+  }
+  obj <- result[["a3"]]
   if (verbosity > 0L) {
     msg(
       "Read ",

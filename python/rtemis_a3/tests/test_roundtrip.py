@@ -33,7 +33,7 @@ class TestRoundTrip:
             },
             variant=[
                 {"position": 5, "from": "R", "to": "Q", "source": "ClinVar"},
-                {"position": 10, "from": "L", "to": "P"},
+                {"position": 10, "from": "I", "to": "P"},
             ],
             metadata={
                 "uniprot_id": "P10636",

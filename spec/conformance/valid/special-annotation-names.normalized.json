@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "site": {
+      "a/b": {
+        "index": [
+          1
+        ],
+        "type": ""
+      },
+      "a~b": {
+        "index": [
+          2
+        ],
+        "type": ""
+      },
+      "a.b": {
+        "index": [
+          3
+        ],
+        "type": ""
+      },
+      "Domain (R1, R3, R4)": {
+        "index": [
+          4
+        ],
+        "type": ""
+      },
+      "β-sheet": {
+        "index": [
+          5
+        ],
+        "type": ""
+      }
+    },
+    "region": {},
+    "ptm": {},
+    "processing": {},
+    "variant": []
+  },
+  "metadata": {
+    "uniprot_id": "",
+    "description": "",
+    "reference": "",
+    "organism": ""
+  }
+}

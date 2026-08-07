@@ -1,28 +1,32 @@
 # ─── Serialization ────────────────────────────────────────────────────────────
 
-_to_dict(e::A3Position) = Dict("index" => e.index, "type" => e.type)
-_to_dict(e::A3Range) = Dict("index" => [collect(r) for r in e.index], "type" => e.type)
+# Output is in canonical form: schema-defined members in schema order,
+# author-supplied keys in document order. OrderedDict is what makes the second
+# half of that true.
+_to_dict(e::A3Position) = OrderedDict{String,Any}("index" => e.index, "type" => e.type)
+_to_dict(e::A3Range) =
+    OrderedDict{String,Any}("index" => [collect(r) for r in e.index], "type" => e.type)
 
 function _to_dict(v::VariantRecord)
-    d = Dict{String,Any}("position" => v.position)
+    d = OrderedDict{String,Any}("position" => v.position)
     merge!(d, v.extra)
     d
 end
 
-function to_dict(a3::A3)::Dict{String,Any}
-    Dict{String,Any}(
+function to_dict(a3::A3)::OrderedDict{String,Any}
+    fam(d) = OrderedDict{String,Any}(k => _to_dict(v) for (k, v) in d)
+    OrderedDict{String,Any}(
         "\$schema" => _A3_SCHEMA_URI,
         "a3_version" => _A3_VERSION,
         "sequence" => a3.sequence,
-        "annotations" => Dict{String,Any}(
-            "site" => Dict(k => _to_dict(v) for (k, v) in a3.annotations.site),
-            "region" => Dict(k => _to_dict(v) for (k, v) in a3.annotations.region),
-            "ptm" => Dict(k => _to_dict(v) for (k, v) in a3.annotations.ptm),
-            "processing" =>
-                Dict(k => _to_dict(v) for (k, v) in a3.annotations.processing),
+        "annotations" => OrderedDict{String,Any}(
+            "site" => fam(a3.annotations.site),
+            "region" => fam(a3.annotations.region),
+            "ptm" => fam(a3.annotations.ptm),
+            "processing" => fam(a3.annotations.processing),
             "variant" => [_to_dict(v) for v in a3.annotations.variant],
         ),
-        "metadata" => Dict{String,Any}(
+        "metadata" => OrderedDict{String,Any}(
             "uniprot_id" => a3.metadata.uniprot_id,
             "description" => a3.metadata.description,
             "reference" => a3.metadata.reference,
@@ -39,12 +43,19 @@ end
 Parse an A3 object from a JSON string.
 """
 function a3_from_json(text::AbstractString)::A3
+    # `dicttype = OrderedDict` keeps author-supplied key order, which is part of
+    # the document: annotation names and a variant record's extra members must
+    # round-trip in the order they were written.
     raw = try
-        JSON.parse(text)
+        JSON.parse(text; dicttype = OrderedDict)
     catch e
         throw(A3ParseError("JSON parse error: $e"))
     end
-    raw isa AbstractDict || throw(A3ParseError("JSON root must be an object"))
+    # A non-object root is a validation issue (A3E_DOC_NOT_OBJECT), not a parse
+    # failure: the input was perfectly good JSON.
+    if !(raw isa AbstractDict)
+        throw(A3ValidationError(last(validate(raw))))
+    end
     A3(raw)
 end
 

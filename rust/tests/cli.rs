@@ -36,6 +36,9 @@ fn run(args: &[&str], stdin_data: &str) -> std::process::Output {
 
 const VALID_JSON: &str = r#"{"$schema":"https://schema.rtemis.org/a3/v1/schema.json","a3_version":"1.0.0","sequence":"MAEPRQ","annotations":{"site":{},"region":{},"ptm":{},"processing":{},"variant":[]},"metadata":{"uniprot_id":"P12345","description":"Test protein","reference":"","organism":"Homo sapiens"}}"#;
 
+/// The smallest valid document: `annotations` and `metadata` are optional.
+const MINIMAL_JSON: &str = r#"{"$schema":"https://schema.rtemis.org/a3/v1/schema.json","a3_version":"1.0.0","sequence":"MAEPRQ"}"#;
+
 /// Valid JSON whose site annotation has a position beyond the sequence length.
 const INVALID_A3_JSON: &str = r#"{"$schema":"https://schema.rtemis.org/a3/v1/schema.json","a3_version":"1.0.0","sequence":"MAEPRQ","annotations":{"site":{"bad":{"index":[999],"type":""}},"region":{},"ptm":{},"processing":{},"variant":[]},"metadata":{"uniprot_id":"","description":"","reference":"","organism":""}}"#;
 
@@ -53,6 +56,12 @@ const NON_ASCII_JSON: &str = r#"{"$schema":"https://schema.rtemis.org/a3/v1/sche
 #[test]
 fn valid_input_exits_0() {
     let out = run(&["-"], VALID_JSON);
+    assert_eq!(out.status.code(), Some(0));
+}
+
+#[test]
+fn minimal_document_exits_0() {
+    let out = run(&["-"], MINIMAL_JSON);
     assert_eq!(out.status.code(), Some(0));
 }
 
@@ -87,7 +96,7 @@ fn json_output_valid() {
         serde_json::from_slice(&out.stdout).expect("stdout was not valid JSON");
 
     assert_eq!(v["valid"], true);
-    assert!(v["errors"].as_array().unwrap().is_empty());
+    assert!(v["issues"].as_array().unwrap().is_empty());
     assert_eq!(v["sequence_length"], 6);
     assert_eq!(v["metadata"]["uniprot_id"], "P12345");
 }
@@ -101,7 +110,16 @@ fn json_output_invalid_a3() {
         serde_json::from_slice(&out.stdout).expect("stdout was not valid JSON");
 
     assert_eq!(v["valid"], false);
-    assert!(!v["errors"].as_array().unwrap().is_empty());
+    assert_eq!(v["stage"], 4);
+
+    // Issues carry a stable code and an RFC 6901 pointer, which is what makes
+    // the CLI usable as the conformance oracle when debugging another
+    // implementation.
+    let issues = v["issues"].as_array().unwrap();
+    assert_eq!(issues.len(), 1);
+    assert_eq!(issues[0]["code"], "A3E_POS_OUT_OF_BOUNDS");
+    assert_eq!(issues[0]["path"], "/annotations/site/bad/index/0");
+    assert!(issues[0]["message"].is_string());
 }
 
 #[test]
@@ -112,8 +130,11 @@ fn json_output_bad_json() {
     let v: serde_json::Value =
         serde_json::from_slice(&out.stdout).expect("stdout was not valid JSON");
 
+    // A file that is not JSON has no path to report and nothing to collect, so
+    // it is a parse error rather than a validation issue.
     assert_eq!(v["valid"], false);
-    assert!(!v["errors"].as_array().unwrap().is_empty());
+    assert!(v["issues"].as_array().unwrap().is_empty());
+    assert!(v["error"].is_string());
 }
 
 // ---------------------------------------------------------------------------

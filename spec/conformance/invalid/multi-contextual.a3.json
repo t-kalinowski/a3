@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "site": {
+      "s": {
+        "index": [
+          5,
+          30,
+          40
+        ]
+      }
+    },
+    "region": {
+      "r": {
+        "index": [
+          [
+            20,
+            99
+          ]
+        ]
+      }
+    },
+    "variant": [
+      {
+        "position": 5,
+        "from": "K"
+      },
+      {
+        "position": 88
+      }
+    ]
+  }
+}

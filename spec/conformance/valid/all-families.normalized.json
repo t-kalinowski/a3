@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "site": {
+      "Active site": {
+        "index": [
+          5,
+          17
+        ],
+        "type": "active site"
+      }
+    },
+    "region": {
+      "Domain": {
+        "index": [
+          [
+            3,
+            10
+          ],
+          [
+            15,
+            22
+          ]
+        ],
+        "type": "repeat"
+      }
+    },
+    "ptm": {
+      "Phosphorylation": {
+        "index": [
+          2,
+          18
+        ],
+        "type": "phosphoserine"
+      }
+    },
+    "processing": {
+      "Signal peptide": {
+        "index": [
+          [
+            1,
+            6
+          ]
+        ],
+        "type": "signal"
+      }
+    },
+    "variant": [
+      {
+        "position": 5,
+        "from": "R",
+        "to": "W"
+      },
+      {
+        "position": 18,
+        "from": "Y",
+        "to": "C"
+      }
+    ]
+  },
+  "metadata": {
+    "uniprot_id": "P10636",
+    "description": "Microtubule-associated protein tau",
+    "reference": "https://example.org/ref",
+    "organism": "Homo sapiens"
+  }
+}

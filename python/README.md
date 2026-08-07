@@ -147,3 +147,37 @@ use `create_a3` or `a3_from_json` instead.
 ## License
 
 [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/)
+
+## Validation
+
+Validation is **collect-all**. A document is checked in four stages — envelope,
+structural, intra-field, contextual — and every issue in the earliest failing
+stage is reported at once. Each issue carries a stable `code` and an
+[RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer `path`, both of
+which are identical across the R, Python, Julia, TypeScript, and Rust
+implementations of A3. Messages are for humans and are not contractual.
+
+```python
+from rtemis.a3 import a3_from_json, A3ValidationError
+
+try:
+    a3 = a3_from_json(text)
+except A3ValidationError as exc:
+    print(exc.stage)                                   # 4
+    for issue in exc.issues:
+        print(issue.code, issue.path)
+        # A3E_POS_OUT_OF_BOUNDS /annotations/site/Active site/index/2
+```
+
+For a form or a live-validation panel, use the non-throwing entry point:
+
+```python
+import json
+from rtemis.a3 import validate_a3
+
+issues = validate_a3(json.loads(text))   # [] when the document is valid
+```
+
+Reading a **document** collects every issue; calling a **constructor** fails
+fast with one message. That split is deliberate: see
+[`spec/README.md`](../spec/README.md).

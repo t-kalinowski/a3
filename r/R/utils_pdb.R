@@ -48,7 +48,7 @@ pdb_annotations <- function(
   pdbe_api_url = "https://www.ebi.ac.uk/pdbe/api",
   verbosity = 1L
 ) {
-  check_dependencies(c("httr", "jsonlite"))
+  check_dependencies("httr")
   check_scalar_character(accession)
   check_optional_scalar_character(pdb_id)
   check_scalar_character(pdbe_graph_url)
