@@ -22,12 +22,38 @@
 import { sortDedup, sortRanges } from "./normalize";
 
 /** Result of a parse: either successful with a value, or failed with a message. */
-export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export type ParseResult<T> =
+  | {
+      /** Discriminant: the parse succeeded, so `value` is present. */
+      ok: true;
+      /** The parsed value. */
+      value: T;
+    }
+  | {
+      /** Discriminant: the parse failed, so `error` is present. */
+      ok: false;
+      /**
+       * Human-readable reason, naming the offending token. Intended for display
+       * next to the input that produced it. Not contractual — these are input
+       * parsers, not validation, so the messages carry no A3 issue code.
+       */
+      error: string;
+    };
 
 /** Tagged result of {@link parseIndex}, distinguishing position vs range shape. */
 export type ParsedIndex =
-  | { kind: "positions"; values: number[] }
-  | { kind: "ranges"; values: [number, number][] };
+  | {
+      /** Discriminant: the input parsed as a list of positions. */
+      kind: "positions";
+      /** Sorted, deduplicated 1-based residue positions. */
+      values: number[];
+    }
+  | {
+      /** Discriminant: the input parsed as a list of ranges. */
+      kind: "ranges";
+      /** Ranges sorted by start position, each an inclusive `[start, end]`. */
+      values: [number, number][];
+    };
 
 const TOKEN_SPLIT = /[\s,]+/;
 const RANGE_PATTERN = /^(\d+)\s*-\s*(\d+)$/;
@@ -70,8 +96,8 @@ export function parsePositions(text: string): ParseResult<number[]> {
  * than `start` (a single residue belongs in the `site` family). This matches
  * the document schema's `start < end` refinement.
  *
- * Note: this parser does not check for overlap — that's enforced by
- * {@link A3InputSchema} at the document level.
+ * Note: this parser does not check for overlap — that is a document-level rule,
+ * reported by {@link validate} as `A3E_RANGE_OVERLAP`.
  *
  * @param text - Raw user text, e.g. `"1-50, 75-100"` or `"1-50\n75-100"`.
  */
