@@ -173,7 +173,10 @@ def pointer(base: str, token: str | int) -> str:
     base : str
         The pointer to extend. The empty string denotes the document root.
     token : str or int
-        An object member name (escaped) or a 0-based array subscript (not).
+        A **raw** object member name, which this function escapes, or a 0-based
+        array subscript, which needs no escaping. Do not pre-escape a name:
+        ``pointer(b, "a~1b")`` yields ``a~01b``, because the ``~`` is escaped a
+        second time.
 
     Returns
     -------
@@ -182,11 +185,11 @@ def pointer(base: str, token: str | int) -> str:
 
     Examples
     --------
-    >>> pointer("/annotations/site", "a/b")
+    >>> pointer("/annotations/site", "a/b")     # escaped
     '/annotations/site/a~1b'
-    >>> pointer("", "$schema")
+    >>> pointer("", "$schema")                  # nothing to escape
     '/$schema'
-    >>> pointer("/annotations/variant", 3)
+    >>> pointer("/annotations/variant", 3)      # subscript, not escaped
     '/annotations/variant/3'
     """
     if isinstance(token, int):

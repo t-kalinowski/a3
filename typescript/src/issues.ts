@@ -10,13 +10,75 @@
  */
 
 /**
- * Every A3 validation issue code, mapped to the stage it belongs to.
+ * The validation stage a rule belongs to.
+ *
+ * Written out rather than derived from {@link A3_ISSUE_STAGES} because JSR
+ * requires every exported symbol to carry an explicit type — an inferred one
+ * makes the package "slow types" and blocks publishing.
+ */
+export type A3Stage = 1 | 2 | 3 | 4;
+
+/**
+ * A stable, machine-readable validation issue code.
  *
  * Codes are never renumbered and never reused. See `spec/error-codes.md` for
  * the full registry, including each code's trigger condition and the path it
  * reports.
  */
-export const A3_ISSUE_STAGES = {
+export type A3IssueCode =
+  // ── Stage 1 — Envelope ──────────────────────────────────────────────────
+  | "A3E_DOC_NOT_OBJECT"
+  | "A3E_ENVELOPE_SCHEMA_MISSING"
+  | "A3E_ENVELOPE_SCHEMA_MISMATCH"
+  | "A3E_ENVELOPE_VERSION_MISSING"
+  | "A3E_ENVELOPE_VERSION_MISMATCH"
+
+  // ── Stage 2 — Structural ────────────────────────────────────────────────
+  | "A3E_UNKNOWN_FIELD"
+  | "A3E_SEQ_MISSING"
+  | "A3E_SEQ_NOT_STRING"
+  | "A3E_SEQ_TOO_SHORT"
+  | "A3E_SEQ_CHARSET"
+  | "A3E_ANNOTATIONS_NOT_OBJECT"
+  | "A3E_METADATA_NOT_OBJECT"
+  | "A3E_METADATA_FIELD_NOT_STRING"
+  | "A3E_FAMILY_NOT_OBJECT"
+  | "A3E_VARIANT_LIST_NOT_ARRAY"
+  | "A3E_NAME_EMPTY"
+  | "A3E_ENTRY_NOT_OBJECT"
+  | "A3E_ENTRY_TYPE_NOT_STRING"
+  | "A3E_INDEX_MISSING"
+  | "A3E_INDEX_NOT_ARRAY"
+  | "A3E_INDEX_ELEMENT_TYPE"
+  | "A3E_INDEX_MIXED"
+  | "A3E_RANGE_ARITY"
+  | "A3E_RANGE_ENDPOINT_NOT_INTEGER"
+  | "A3E_VARIANT_NOT_OBJECT"
+  | "A3E_VARIANT_POSITION_MISSING"
+  | "A3E_VARIANT_POSITION_NOT_INTEGER"
+
+  // ── Stage 3 — Intra-field ───────────────────────────────────────────────
+  | "A3E_POS_NOT_POSITIVE"
+  | "A3E_POS_DUPLICATE"
+  | "A3E_RANGE_ENDPOINT_NOT_POSITIVE"
+  | "A3E_RANGE_ORDER"
+  | "A3E_RANGE_OVERLAP"
+  | "A3E_VARIANT_POSITION_NOT_POSITIVE"
+
+  // ── Stage 4 — Contextual ────────────────────────────────────────────────
+  | "A3E_POS_OUT_OF_BOUNDS"
+  | "A3E_RANGE_OUT_OF_BOUNDS"
+  | "A3E_VARIANT_OUT_OF_BOUNDS"
+  | "A3E_VARIANT_RESIDUE_MISMATCH";
+
+/**
+ * Every A3 validation issue code, mapped to the stage it belongs to.
+ *
+ * Typing this as a total `Record` over {@link A3IssueCode} makes the two
+ * declarations check each other: a code in the union with no stage here, or a
+ * stage here for a code not in the union, is a compile error.
+ */
+export const A3_ISSUE_STAGES: Readonly<Record<A3IssueCode, A3Stage>> = {
   // ── Stage 1 — Envelope ──────────────────────────────────────────────────
   A3E_DOC_NOT_OBJECT: 1,
   A3E_ENVELOPE_SCHEMA_MISSING: 1,
@@ -61,16 +123,10 @@ export const A3_ISSUE_STAGES = {
   A3E_RANGE_OUT_OF_BOUNDS: 4,
   A3E_VARIANT_OUT_OF_BOUNDS: 4,
   A3E_VARIANT_RESIDUE_MISMATCH: 4,
-} as const satisfies Record<string, 1 | 2 | 3 | 4>;
-
-/** A stable, machine-readable validation issue code. */
-export type A3IssueCode = keyof typeof A3_ISSUE_STAGES;
-
-/** The validation stage a code belongs to. */
-export type A3Stage = (typeof A3_ISSUE_STAGES)[A3IssueCode];
+};
 
 /** Every code in the registry, for coverage checks. */
-export const A3_ISSUE_CODES = Object.keys(A3_ISSUE_STAGES) as A3IssueCode[];
+export const A3_ISSUE_CODES: readonly A3IssueCode[] = Object.keys(A3_ISSUE_STAGES) as A3IssueCode[];
 
 /** A single validation issue. */
 export interface A3Issue {
@@ -101,13 +157,15 @@ export function escapeToken(token: string): string {
  * Append one reference token or array subscript to a JSON Pointer.
  *
  * @param base - The pointer to extend. The empty string denotes the document root.
- * @param token - An object member name (escaped) or a 0-based array subscript (not).
+ * @param token - A **raw** object member name, which this function escapes, or a
+ *   0-based array subscript, which needs no escaping. Do not pre-escape a name:
+ *   `pointer(b, "a~1b")` yields `a~01b`, because the `~` is escaped a second time.
  *
  * @example
  * ```ts
- * pointer("/annotations/site", "a/b"); // "/annotations/site/a~1b"
- * pointer("", "$schema");              // "/$schema"
- * pointer("/annotations/variant", 3);  // "/annotations/variant/3"
+ * pointer("/annotations/site", "a/b"); // "/annotations/site/a~1b"  (escaped)
+ * pointer("", "$schema");              // "/$schema"                (nothing to escape)
+ * pointer("/annotations/variant", 3);  // "/annotations/variant/3"  (subscript)
  * ```
  */
 export function pointer(base: string, token: string | number): string {

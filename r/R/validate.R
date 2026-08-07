@@ -138,7 +138,9 @@
 #' Append a reference token or array subscript to a JSON Pointer
 #'
 #' @param base Character scalar: Pointer to extend. `""` denotes the document root.
-#' @param token Character or integer: Member name (escaped) or 0-based subscript (not).
+#' @param token Character or integer: A raw member name, which is escaped here,
+#' or a 0-based subscript, which is not. Do not pre-escape a name: passing
+#' `a~1b` yields `a~01b`, because the `~` is escaped a second time.
 #'
 #' @return Character scalar: The extended pointer.
 #'
