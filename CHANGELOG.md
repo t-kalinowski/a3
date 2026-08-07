@@ -1,8 +1,53 @@
 # Changelog
 
-All five A3 implementations are released together from one commit. Versions
-differ per package because each started from a different number; the entry below
-covers all of them.
+All five A3 implementations are released together from one commit whenever a
+change reaches the format, the validator, or the conformance corpus. Versions
+differ per package because each started from a different number. A change
+confined to one implementation's own packaging ships on its own, and its entry
+says which packages it covers.
+
+## 2026-08-07 — TypeScript provenance
+
+| Package | Version |
+|---|---|
+| `@rtemis/a3` (npm + JSR) | 0.3.1 |
+
+**TypeScript only.** Nothing in the A3 format, the validator, or the conformance
+corpus changed, so the other four implementations are untouched and stay at
+their 2026-08-06 versions. `a3_version` remains `"1.0.0"`.
+
+### Added
+
+- **JSR publishes from GitHub Actions**, via a workflow dispatched by hand with
+  the version as its input. Publishing stays manual — no push and no tag ships
+  anything — but JSR mints a SLSA provenance attestation in the Sigstore
+  transparency log *only* for packages published from Actions over OIDC, so a
+  `deno publish` from a laptop cannot produce one. npm still publishes locally.
+
+### Fixed
+
+- **The `ParseResult` and `ParsedIndex` union members carried no
+  documentation** — the `ok` / `value` / `error` and `kind` / `values` arms.
+  They were the last undocumented nodes in the public API.
+- **A dangling `{@link A3InputSchema}`** in the documentation for
+  `parseRanges`. That was the Zod schema removed in 0.3.0, so the reference had
+  been rendering as a broken link. It now points at `validate` and
+  `A3E_RANGE_OVERLAP`, where range overlap is actually enforced.
+
+### Notes
+
+- **npm skips 0.3.0 entirely.** npm was still on 0.2.1 when JSR reached 0.3.0,
+  so the next `pnpm publish` takes npm from 0.2.1 straight to 0.3.1. The two
+  registries are back in step afterwards.
+- **0.3.0 cannot gain provenance retroactively.** JSR never replaces a published
+  version, so the attestation arrives with 0.3.1.
+- JSR's "documented symbols" score reads 51% (31/60) even though every exported
+  symbol is documented. The denominator counts symbols once per entrypoint — 31
+  from `index.ts` plus 29 from `index-browser.ts`, which re-exports the same
+  symbols minus the two I/O functions — while the numerator appears to credit
+  each unique symbol once. Two entrypoints sharing most of their surface cap the
+  figure near 52%. It is not a documentation gap, and adding documentation will
+  not move it.
 
 ## 2026-08-06 — conformance release
 
@@ -10,7 +55,7 @@ covers all of them.
 |---|---|
 | `rtemis.a3` (R) | 0.6.0 |
 | `rtemis_a3` (Python) | 0.2.0 |
-| `@rtemis/a3` (npm + JSR) | 0.3.0 |
+| `@rtemis/a3` (npm + JSR) | 0.3.1 |
 | `RtemisA3` (Julia) | 0.2.0 |
 | `rtemis-a3` (Rust) | 0.3.0 |
 
