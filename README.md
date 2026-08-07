@@ -34,6 +34,13 @@ five implementations are held to:
 - [`spec/conformance/`](spec/conformance/): the shared conformance corpus, read
   by all five implementations from one copy
 
+Conformance is exact, not approximate. Given the same document, all five
+implementations report the same set of `{code, path}` pairs from the same
+validation stage — codes and JSON Pointer paths are contractual, message wording
+is not. Every implementation is run against the one shared corpus in CI on every
+change, so a divergence fails the build rather than surfacing later as a
+cross-language bug.
+
 ## Implementation
 
 - `r/`: `rtemis.a3`
