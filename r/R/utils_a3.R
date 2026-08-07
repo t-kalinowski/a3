@@ -14,7 +14,7 @@
 #' }
 get_alphafold <- function(uniprotid) {
   check_scalar_character(uniprotid, arg_name = "uniprotid")
-  check_dependencies(c("httr", "jsonlite"))
+  check_dependencies("httr")
   url <- paste0("https://www.alphafold.ebi.ac.uk/api/prediction/", uniprotid)
   headers <- c(
     "accept" = "application/json"

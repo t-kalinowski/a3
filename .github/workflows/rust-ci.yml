@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - rust/**
+      - spec/conformance/**
   push:
     branches:
       - main
     paths:
       - rust/**
+      - spec/conformance/**
 
 permissions:
   contents: read

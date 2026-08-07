@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - r/**
+      - spec/conformance/**
   push:
     branches:
       - main
     paths:
       - r/**
+      - spec/conformance/**
 
 permissions:
   contents: read
@@ -49,4 +51,17 @@ jobs:
         with:
           working-directory: r
           upload-snapshots: true
+          args: 'c("--no-manual", "--as-cran")'
           build_args: 'c("--no-manual", "--compact-vignettes=gs+qpdf")'
+
+      # A plain check does not catch a package used unconditionally from
+      # Suggests. This does, and it is the check that would have caught
+      # jsonlite being in Suggests with 13 unguarded call sites.
+      - name: Check with dependencies only
+        working-directory: r
+        env:
+          _R_CHECK_DEPENDS_ONLY_: true
+          _R_CHECK_FORCE_SUGGESTS_: false
+        run: |
+          R CMD build .
+          R CMD check rtemis.a3_*.tar.gz --no-manual

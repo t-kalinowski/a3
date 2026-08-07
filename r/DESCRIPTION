@@ -1,7 +1,7 @@
 Package: rtemis.a3
 Title: Amino Acid Annotation (A3) Format
-Version: 0.5.3
-Date: 2026-04-24
+Version: 0.6.0
+Date: 2026-08-06
 Authors@R:
     person(given = "E.D.", family = "Gennatas", role = c("aut", "cre", "cph"),
            email = "gennatas@gmail.com",
@@ -16,19 +16,20 @@ BugReports: https://github.com/rtemis-org/a3/issues
 License: GPL (>= 3)
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.3
 Depends:
     R (>= 4.1.0)
 Imports:
     cli,
     data.table,
+    jsonlite,
     rtemis.core,
     S7,
+    stats,
     utils
 Suggests:
     biomaRt,
     httr,
-    jsonlite,
     seqinr,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.0

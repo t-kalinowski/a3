@@ -6,47 +6,48 @@
 //! invariant that every `A3` value has passed through [`crate::validate()`]
 //! (defined in [`crate::validation`]).
 //!
+//! These types deliberately derive `Serialize` but **not** `Deserialize`. A
+//! `Deserialize` impl would let a caller construct an `A3` straight from JSON,
+//! bypassing validation entirely — the one thing the `pub(crate)` fields exist
+//! to prevent. The only way in is [`crate::validate()`].
+//!
+//! Named maps use [`IndexMap`] rather than `HashMap` because annotation names
+//! are author-supplied and their order is part of the document.
+//! `HashMap` iteration order is nondeterministic, so serializing the same
+//! parsed document twice would produce two different files.
+//!
 //! The hierarchy mirrors the JSON wire format exactly:
 //!
 //! ```text
 //! A3
 //!  ├── sequence:    String
 //!  ├── annotations: Annotations
-//!  │    ├── site:       HashMap<String, SiteEntry>
-//!  │    ├── region:     HashMap<String, RegionEntry>
-//!  │    ├── ptm:        HashMap<String, FlexEntry>
-//!  │    ├── processing: HashMap<String, FlexEntry>
+//!  │    ├── site:       IndexMap<String, SiteEntry>
+//!  │    ├── region:     IndexMap<String, RegionEntry>
+//!  │    ├── ptm:        IndexMap<String, FlexEntry>
+//!  │    ├── processing: IndexMap<String, FlexEntry>
 //!  │    └── variant:    Vec<VariantRecord>
 //!  └── metadata:    Metadata
 //! ```
 
-use std::collections::HashMap;
-
-use serde::{Deserialize, Serialize};
+use indexmap::IndexMap;
+use serde::Serialize;
 
 // ---------------------------------------------------------------------------
 // Site — positions only
 // ---------------------------------------------------------------------------
 
 /// A named annotation marking individual residue positions.
-///
-/// Fields are `pub(crate)` so only code within this crate can construct or
-/// mutate a `SiteEntry`. External callers use the getter methods.
-///
-/// `#[derive(Serialize, Deserialize)]` generates JSON read/write code even for
-/// `pub(crate)` fields — the derive macros run inside the crate and have full
-/// field access.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SiteEntry {
     /// 1-based residue positions, sorted ascending, no duplicates.
     pub(crate) index: Vec<u32>,
 
-    /// Optional label (e.g. `"activeSite"`). Defaults to `""` when absent.
+    /// Optional label (e.g. `"activeSite"`). Empty string when absent.
     ///
     /// `#[serde(rename = "type")]` maps this field to the JSON key `"type"`.
     /// We cannot name the Rust field `type` because that is a reserved keyword.
-    /// `#[serde(default)]` fills in `""` when the key is absent from JSON.
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     pub(crate) kind: String,
 }
 
@@ -67,13 +68,13 @@ impl SiteEntry {
 // ---------------------------------------------------------------------------
 
 /// A named annotation marking contiguous sequence spans.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RegionEntry {
     /// Inclusive `[start, end]` range pairs, sorted by start position.
     /// Each pair satisfies `start < end`; ranges do not overlap.
     pub(crate) index: Vec<[u32; 2]>,
 
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     pub(crate) kind: String,
 }
 
@@ -93,27 +94,22 @@ impl RegionEntry {
 // A3Index — positions OR ranges (used by PTM and Processing)
 // ---------------------------------------------------------------------------
 
-/// The index for PTM and Processing entries can be either positions or ranges,
-/// but never a mix of both within a single entry.
+/// The index for PTM and Processing entries: either positions or ranges, never
+/// a mix of both within a single entry.
 ///
 /// `enum` in Rust is a *sum type* — a value is exactly one of the listed
 /// variants. This is the idiomatic way to represent "either A or B".
 ///
-/// `#[serde(untagged)]` tells serde to detect the variant by trying each one
-/// in declaration order, without requiring a discriminator field in the JSON.
-/// Serde tries `Ranges` first; if that fails it falls back to `Positions`.
-/// This works because `Vec<[u32; 2]>` (array of 2-element arrays) and
-/// `Vec<u32>` (array of integers) are structurally unambiguous in JSON.
-///
-/// Named `A3Index` to match the cross-language naming convention used across
-/// the rtemis-a3 implementations (R, Python, TypeScript, Rust).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `#[serde(untagged)]` serializes the payload directly, with no discriminator
+/// key, so a `Positions` index is written as `[1, 2]` and a `Ranges` index as
+/// `[[1, 2]]` — exactly the wire format the schema declares.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum A3Index {
-    /// Contiguous span pairs — the inner array always has exactly two elements.
-    Ranges(Vec<[u32; 2]>),
     /// Individual residue positions.
     Positions(Vec<u32>),
+    /// Contiguous span pairs — the inner array always has exactly two elements.
+    Ranges(Vec<[u32; 2]>),
 }
 
 impl A3Index {
@@ -135,11 +131,11 @@ impl A3Index {
 }
 
 /// A named PTM or Processing annotation with a flexible index type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FlexEntry {
     pub(crate) index: A3Index,
 
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     pub(crate) kind: String,
 }
 
@@ -161,20 +157,20 @@ impl FlexEntry {
 
 /// A single sequence variant record.
 ///
-/// The spec requires a `position` field and permits any additional
-/// JSON-compatible fields, captured by `extra`.
+/// The spec requires a `position` member and permits any additional
+/// JSON-compatible members, captured by `extra` and preserved verbatim in
+/// document order.
 ///
-/// `#[serde(flatten)]` on a `HashMap` field instructs serde to absorb
-/// all JSON keys that are not explicitly named fields in this struct.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `#[serde(flatten)]` writes `extra`'s entries as siblings of `position`
+/// rather than nesting them under an `extra` key.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct VariantRecord {
     /// Required. 1-based position of the variant on the sequence.
     pub(crate) position: u32,
 
-    /// All other fields from the variant record, preserved as-is.
-    /// `serde_json::Value` can represent any valid JSON value.
+    /// All other members of the variant record, preserved as-is and in order.
     #[serde(flatten)]
-    pub(crate) extra: HashMap<String, serde_json::Value>,
+    pub(crate) extra: IndexMap<String, serde_json::Value>,
 }
 
 impl VariantRecord {
@@ -183,9 +179,20 @@ impl VariantRecord {
         self.position
     }
 
-    /// All extra fields from the variant record beyond `position`.
-    pub fn extra(&self) -> &HashMap<String, serde_json::Value> {
+    /// All members of the variant record beyond `position`, in document order.
+    pub fn extra(&self) -> &IndexMap<String, serde_json::Value> {
         &self.extra
+    }
+
+    /// The `from` residue, when the record carries one as a single character.
+    ///
+    /// Returns `None` when `from` is absent or has any other shape — A3 does
+    /// not own the meaning of an open record's members beyond this one use.
+    pub fn from_residue(&self) -> Option<char> {
+        let s = self.extra.get("from")?.as_str()?;
+        let mut chars = s.chars();
+        let first = chars.next()?;
+        chars.next().is_none().then_some(first)
     }
 }
 
@@ -194,41 +201,33 @@ impl VariantRecord {
 // ---------------------------------------------------------------------------
 
 /// Container for all five annotation families.
-///
-/// `#[serde(default)]`              — fills all fields with empty collections
-///                                    when `annotations` is absent from JSON.
-/// `#[serde(deny_unknown_fields)]`  — any key other than the five families
-///                                    is a hard error.
-/// `#[derive(Default)]`             — generates empty-collection defaults,
-///                                    required by `#[serde(default)]`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct Annotations {
-    pub(crate) site: HashMap<String, SiteEntry>,
-    pub(crate) region: HashMap<String, RegionEntry>,
-    pub(crate) ptm: HashMap<String, FlexEntry>,
-    pub(crate) processing: HashMap<String, FlexEntry>,
+    pub(crate) site: IndexMap<String, SiteEntry>,
+    pub(crate) region: IndexMap<String, RegionEntry>,
+    pub(crate) ptm: IndexMap<String, FlexEntry>,
+    pub(crate) processing: IndexMap<String, FlexEntry>,
     pub(crate) variant: Vec<VariantRecord>,
 }
 
 impl Annotations {
     /// Named site annotations (individual residue positions).
-    pub fn site(&self) -> &HashMap<String, SiteEntry> {
+    pub fn site(&self) -> &IndexMap<String, SiteEntry> {
         &self.site
     }
 
     /// Named region annotations (contiguous spans).
-    pub fn region(&self) -> &HashMap<String, RegionEntry> {
+    pub fn region(&self) -> &IndexMap<String, RegionEntry> {
         &self.region
     }
 
     /// Named PTM annotations (positions or ranges).
-    pub fn ptm(&self) -> &HashMap<String, FlexEntry> {
+    pub fn ptm(&self) -> &IndexMap<String, FlexEntry> {
         &self.ptm
     }
 
     /// Named processing annotations (positions or ranges).
-    pub fn processing(&self) -> &HashMap<String, FlexEntry> {
+    pub fn processing(&self) -> &IndexMap<String, FlexEntry> {
         &self.processing
     }
 
@@ -244,10 +243,9 @@ impl Annotations {
 
 /// Descriptive metadata attached to the sequence.
 ///
-/// All four fields default to `""`. Unknown keys are rejected by
-/// `deny_unknown_fields`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+/// All four members are free text and default to `""`. A3 validates their type
+/// and nothing else — see `spec/README.md`, "Validation is not linting".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct Metadata {
     pub(crate) uniprot_id: String,
     pub(crate) description: String,
@@ -288,27 +286,28 @@ pub const A3_VERSION: &str = "1.0.0";
 
 /// The root A3 object.
 ///
-/// Fields are `pub(crate)` — only [`crate::validate()`] (in [`crate::validation`]) may construct an `A3`,
-/// guaranteeing that every value returned to external callers has passed full
-/// two-stage validation. Public getter methods provide read-only access.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Fields are `pub(crate)` — only [`crate::validate()`] may construct an `A3`,
+/// guaranteeing that every value returned to external callers has passed all
+/// four validation stages. Public getter methods provide read-only access.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct A3 {
-    /// JSON Schema URI — must equal [`A3_SCHEMA_URI`]. Required on input.
+    /// JSON Schema URI — always [`A3_SCHEMA_URI`].
     #[serde(rename = "$schema")]
     pub(crate) schema: String,
 
-    /// A3 spec version — must equal [`A3_VERSION`]. Required on input.
+    /// A3 spec version — always [`A3_VERSION`].
     pub(crate) a3_version: String,
 
-    /// The amino acid sequence. Non-empty, ≥ 2 characters, `[A-Z*]` only.
-    /// Lowercase input is normalized to uppercase during validation.
+    /// The amino acid sequence, normalized to uppercase. At least 2 characters,
+    /// `[A-Z*]` only.
     pub(crate) sequence: String,
 
-    /// All annotation families. Required; use an empty object `{}` if none.
+    /// All annotation families. Always present in the serialized form, even
+    /// when the source document omitted the key.
     pub(crate) annotations: Annotations,
 
-    /// Sequence metadata. Required; use an empty object `{}` if none.
+    /// Sequence metadata. Always present in the serialized form, even when the
+    /// source document omitted the key.
     pub(crate) metadata: Metadata,
 }
 

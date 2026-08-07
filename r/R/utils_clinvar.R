@@ -45,7 +45,7 @@ clinvar_variants <- function(
   batch_size = 500L,
   verbosity = 1L
 ) {
-  check_dependencies(c("httr", "jsonlite"))
+  check_dependencies("httr")
   check_scalar_character(gene)
   check_character(significance)
   max_variants <- clean_int(max_variants)
@@ -199,7 +199,7 @@ clinvar_variants <- function(
     variant_list <- c(
       variant_list,
       list(A3Variant(
-        position = A3Position(data = parsed[["position"]]),
+        position = clean_int(parsed[["position"]]),
         info = info
       ))
     )
@@ -214,7 +214,7 @@ clinvar_variants <- function(
   raw_names <- vapply(
     variant_list,
     function(v) {
-      paste0(v@info[["from"]], v@position@data, v@info[["to"]])
+      paste0(v@info[["from"]], v@position, v@info[["to"]])
     },
     character(1L)
   )

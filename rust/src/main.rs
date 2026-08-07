@@ -2,12 +2,12 @@
 //!
 //! Usage: `a3 [OPTIONS] <FILE>`
 //! Pass `-` as `<FILE>` to read from stdin.
-
-mod diagnostic;
+//!
+//! Exit codes: `0` valid, `1` invalid, `2` could not be read or parsed.
 
 use clap::Parser;
 use colored::Colorize;
-use rtemis_a3::{A3, A3_SCHEMA_URI, A3_VERSION, A3Error, validate};
+use rtemis_a3::{A3, A3Error, A3Issue, a3_from_json};
 use serde_json::{Value, json};
 use std::io::{self, IsTerminal, Read};
 use std::process;
@@ -38,8 +38,9 @@ struct Cli {
     #[arg(short, long)]
     json: bool,
 
-    /// Run full diagnostic validation (accumulates all errors)
-    #[arg(short = 'D', long)]
+    /// Deprecated and ignored: every run is a full diagnostic, because
+    /// validation always accumulates every issue in the failing stage.
+    #[arg(short = 'D', long, hide = true)]
     diagnose: bool,
 }
 
@@ -120,32 +121,17 @@ fn build_hint(names: &[String], available: usize) -> String {
     result
 }
 
-/// Print human-readable output.
-///
-/// `errors` is empty when the file is valid, non-empty when validation failed.
-/// In both cases we print whatever metadata and stats are available.
-fn print_human(a3: &A3, errors: &[String], limit: usize) {
+/// Print the inspection view of a valid document.
+fn print_valid(a3: &A3, limit: usize) {
     println!();
-    // --- Status line ---
-    if errors.is_empty() {
-        println!(
-            "  {} {} {}",
-            "✓ valid".green().bold(),
-            format!("A3 {}", a3.a3_version())
-                .bold()
-                .truecolor(71, 156, 255),
-            a3.schema().dimmed(),
-        );
-    } else {
-        println!("  {}", "✗ invalid".red().bold());
-        println!();
-        let last = errors.len() - 1;
-        for (i, e) in errors.iter().enumerate() {
-            let connector = if i == last { "└──" } else { "├──" };
-            println!("  {} {}", connector.dimmed(), e.red());
-        }
-    }
-
+    println!(
+        "  {} {} {}",
+        "✓ valid".green().bold(),
+        format!("A3 {}", a3.a3_version())
+            .bold()
+            .truecolor(71, 156, 255),
+        a3.schema().dimmed(),
+    );
     println!();
 
     // --- Sequence ---
@@ -169,16 +155,12 @@ fn print_human(a3: &A3, errors: &[String], limit: usize) {
 
     let ann = a3.annotations();
 
-    // Sorted names per family (all of them — build_hint decides how many fit).
-    // Variant has no names; show positions instead.
-    let mut site_names: Vec<String> = ann.site().keys().cloned().collect();
-    site_names.sort();
-    let mut region_names: Vec<String> = ann.region().keys().cloned().collect();
-    region_names.sort();
-    let mut ptm_names: Vec<String> = ann.ptm().keys().cloned().collect();
-    ptm_names.sort();
-    let mut proc_names: Vec<String> = ann.processing().keys().cloned().collect();
-    proc_names.sort();
+    // Names in document order — that order is part of the document, so the
+    // display should not invent a different one.
+    let site_names: Vec<String> = ann.site().keys().cloned().collect();
+    let region_names: Vec<String> = ann.region().keys().cloned().collect();
+    let ptm_names: Vec<String> = ann.ptm().keys().cloned().collect();
+    let proc_names: Vec<String> = ann.processing().keys().cloned().collect();
     let var_names: Vec<String> = ann
         .variant()
         .iter()
@@ -271,27 +253,73 @@ fn print_human(a3: &A3, errors: &[String], limit: usize) {
     println!();
 }
 
-/// Build the JSON output value.
+/// Print the issue list of an invalid document.
 ///
-/// Same signature as `print_human` — `errors` empty means valid.
-fn build_json(a3: &A3, errors: &[String], limit: usize) -> Value {
+/// Every issue in the list belongs to the same stage — validation stops at a
+/// stage boundary — so the stage is reported once, in the header.
+fn print_invalid(issues: &[A3Issue]) {
+    println!();
+    let stage = issues.first().map(A3Issue::stage).unwrap_or(0);
+    println!(
+        "  {}  {}",
+        "✗ invalid".red().bold(),
+        format!(
+            "{} issue(s) at stage {} ({})",
+            issues.len(),
+            stage,
+            stage_name(stage)
+        )
+        .dimmed()
+    );
+    println!();
+
+    let last = issues.len().saturating_sub(1);
+    for (i, issue) in issues.iter().enumerate() {
+        let connector = if i == last { "└──" } else { "├──" };
+        let where_ = if issue.path.is_empty() {
+            "<document>"
+        } else {
+            &issue.path
+        };
+        println!(
+            "  {} {}  {}",
+            connector.dimmed(),
+            issue.code.code().red().bold(),
+            where_.truecolor(220, 150, 86)
+        );
+        let indent = if i == last { "     " } else { "  │  " };
+        println!("  {}{}", indent.dimmed(), issue.message);
+    }
+    println!();
+}
+
+fn stage_name(stage: u8) -> &'static str {
+    match stage {
+        1 => "envelope",
+        2 => "structural",
+        3 => "intra-field",
+        4 => "contextual",
+        _ => "unknown",
+    }
+}
+
+/// Build the JSON output for a valid document.
+fn json_valid(a3: &A3, limit: usize) -> Value {
     let meta = a3.metadata();
     let ann = a3.annotations();
     let seq = a3.sequence();
-    let char_count = seq.chars().count();
-    let preview: String = seq.chars().take(limit).collect();
 
     json!({
-        "valid": errors.is_empty(),
-        "errors": errors,
+        "valid": true,
+        "issues": [],
         "metadata": {
             "uniprot_id": meta.uniprot_id(),
             "description": meta.description(),
             "reference": meta.reference(),
             "organism": meta.organism(),
         },
-        "sequence_length": char_count,
-        "sequence_preview": preview,
+        "sequence_length": seq.chars().count(),
+        "sequence_preview": seq.chars().take(limit).collect::<String>(),
         "annotations": {
             "site": ann.site().len(),
             "region": ann.region().len(),
@@ -300,6 +328,25 @@ fn build_json(a3: &A3, errors: &[String], limit: usize) -> Value {
             "variant": ann.variant().len(),
         }
     })
+}
+
+/// Build the JSON output for an invalid document.
+///
+/// Issues serialize as `{code, path, message}`, which makes the CLI usable as
+/// the conformance oracle when debugging another implementation.
+fn json_invalid(issues: &[A3Issue]) -> Value {
+    json!({
+        "valid": false,
+        "stage": issues.first().map(A3Issue::stage),
+        "issues": issues,
+    })
+}
+
+fn emit(value: &Value) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(value).expect("output value is always serializable")
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -330,7 +377,6 @@ fn main() {
         colored::control::set_override(false);
     }
 
-    // Read input — exit 2 on I/O error.
     let content = read_input(&cli.file).unwrap_or_else(|e| {
         if !cli.quiet {
             eprintln!("{e}");
@@ -338,153 +384,36 @@ fn main() {
         process::exit(2);
     });
 
-    // --diagnose: full step-by-step validation that accumulates all errors.
-    if cli.diagnose {
-        match diagnostic::a3_diagnose(&content) {
-            Ok(a3) => {
-                if !cli.quiet {
-                    if cli.json {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&build_json(&a3, &[], cli.limit)).unwrap()
-                        );
-                    } else {
-                        print_human(&a3, &[], cli.limit);
-                    }
-                }
-                process::exit(0);
-            }
-            Err(err) => {
-                let (errors, exit_code) = match &err {
-                    diagnostic::DiagnoseError::Fatal(e) => (e.as_slice(), 2i32),
-                    diagnostic::DiagnoseError::Invalid(e) => (e.as_slice(), 1i32),
-                };
-                if !cli.quiet {
-                    if cli.json {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&json!({
-                                "valid": false,
-                                "errors": errors,
-                            }))
-                            .unwrap()
-                        );
-                    } else {
-                        println!("\n  {}", "✗ invalid".red().bold());
-                        println!();
-                        let last = errors.len() - 1;
-                        for (i, msg) in errors.iter().enumerate() {
-                            let connector = if i == last { "└──" } else { "├──" };
-                            println!("  {} {}", connector.dimmed(), msg.red());
-                        }
-                        println!();
-                    }
-                }
-                process::exit(exit_code);
-            }
-        }
-    }
-
-    // Stage 1: JSON parse — exit 2 on failure.
-    let raw: A3 = match serde_json::from_str(&content) {
-        Ok(r) => r,
-        Err(e) => {
-            if !cli.quiet {
-                let mut errors = vec![format!("Invalid A3: {e}")];
-
-                // Even though full deserialization failed, try parsing to a
-                // generic Value so we can check envelope fields and surface
-                // *all* errors at once instead of just the first serde failure.
-                if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-                    match value.get("$schema").and_then(|v| v.as_str()) {
-                        Some(s) if s != A3_SCHEMA_URI => {
-                            errors.push(format!("'$schema' must be '{A3_SCHEMA_URI}', got '{s}'"));
-                        }
-                        None => {
-                            errors.push(format!(
-                                "'$schema' is required and must be '{A3_SCHEMA_URI}'"
-                            ));
-                        }
-                        _ => {}
-                    }
-                    match value.get("a3_version").and_then(|v| v.as_str()) {
-                        Some(v) if v != A3_VERSION => {
-                            errors.push(format!("'a3_version' must be '{A3_VERSION}', got '{v}'"));
-                        }
-                        None => {
-                            errors.push(format!(
-                                "'a3_version' is required and must be '{A3_VERSION}'"
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-
-                if cli.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&json!({
-                            "valid": false,
-                            "errors": errors,
-                        }))
-                        .unwrap()
-                    );
-                } else {
-                    println!("\n  {}", "✗ invalid".red().bold());
-                    println!();
-                    let last = errors.len() - 1;
-                    for (i, msg) in errors.iter().enumerate() {
-                        let connector = if i == last { "└──" } else { "├──" };
-                        println!("  {} {}", connector.dimmed(), msg.red());
-                    }
-                }
-            }
-            process::exit(2);
-        }
-    };
-
-    // Snapshot raw data before validate() moves `raw`.
-    // Needed so we can still report metadata when validation fails.
-    let raw_snapshot = raw.clone();
-
-    // Stage 2: A3 validation.
-    match validate(raw) {
+    match a3_from_json(&content) {
         Ok(a3) => {
             if !cli.quiet {
                 if cli.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&build_json(&a3, &[], cli.limit)).unwrap()
-                    );
+                    emit(&json_valid(&a3, cli.limit));
                 } else {
-                    print_human(&a3, &[], cli.limit);
+                    print_valid(&a3, cli.limit);
                 }
             }
             process::exit(0);
         }
-        Err(A3Error::Validate(errors)) => {
+        Err(A3Error::Validate(issues)) => {
             if !cli.quiet {
                 if cli.json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&build_json(
-                            &raw_snapshot,
-                            &errors,
-                            cli.limit,
-                        ))
-                        .unwrap()
-                    );
+                    emit(&json_invalid(&issues));
                 } else {
-                    print_human(&raw_snapshot, &errors, cli.limit);
+                    print_invalid(&issues);
                 }
             }
             process::exit(1);
         }
-        // validate() only ever returns Validate errors; this branch is unreachable
-        // in practice but required for exhaustive matching.
+        // Not JSON at all — there is no path to report and nothing to collect.
         Err(e) => {
             if !cli.quiet {
-                eprintln!("Unexpected error: {e}");
+                if cli.json {
+                    emit(&json!({"valid": false, "issues": [], "error": e.to_string()}));
+                } else {
+                    println!("\n  {}", "✗ invalid".red().bold());
+                    println!("  {}\n", e.to_string().red());
+                }
             }
             process::exit(2);
         }
@@ -494,37 +423,45 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rtemis_a3::a3_from_json;
 
-    const MULTIBYTE_JSON: &str = r#"{
+    const MINIMAL_JSON: &str = r#"{
         "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
         "a3_version": "1.0.0",
-        "sequence": "MAEPRQ",
-        "annotations": {"site":{},"region":{},"ptm":{},"processing":{},"variant":[]},
-        "metadata": {"uniprot_id":"","description":"","reference":"","organism":""}
+        "sequence": "MAEPRQ"
     }"#;
 
-    // Regression test for the panic described in the release review:
-    // build_json / print_human must not panic when --limit lands inside a
-    // multibyte character in an unvalidated (raw) sequence snapshot.
     #[test]
-    fn sequence_preview_does_not_panic_on_multibyte() {
-        // Construct an A3 whose sequence contains multibyte chars by patching
-        // a valid value after parse (simulating what raw_snapshot holds when
-        // validation fails on non-ASCII input).
-        let a3 = a3_from_json(MULTIBYTE_JSON).unwrap();
-        // Replace the sequence field via re-serialization is awkward; instead
-        // we exercise build_json on the valid A3 with a limit that would fall
-        // mid-codepoint if sequence were multibyte. Since our fix uses chars()
-        // the byte boundary is never touched directly.
-        let result = std::panic::catch_unwind(|| {
-            build_json(&a3, &[], 3);
-        });
-        assert!(result.is_ok(), "build_json panicked on sequence preview");
+    fn json_output_reports_codes_and_paths() {
+        let json = r#"{
+            "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+            "a3_version": "1.0.0",
+            "sequence": "MAEPRQ",
+            "annotations": {"site": {"s": {"index": [99]}}}
+        }"#;
+        let Err(A3Error::Validate(issues)) = a3_from_json(json) else {
+            panic!("expected validation issues");
+        };
+        let v = json_invalid(&issues);
+        assert_eq!(v["valid"], false);
+        assert_eq!(v["stage"], 4);
+        assert_eq!(v["issues"][0]["code"], "A3E_POS_OUT_OF_BOUNDS");
+        assert_eq!(v["issues"][0]["path"], "/annotations/site/s/index/0");
+        assert!(v["issues"][0]["message"].is_string());
+    }
 
-        // Also verify the preview is trimmed to 3 chars, not 3 bytes.
-        let v = build_json(&a3, &[], 3);
+    // Regression test for a panic where --limit landed inside a multibyte
+    // character. `chars()` never touches a byte boundary.
+    #[test]
+    fn sequence_preview_counts_characters_not_bytes() {
+        let a3 = a3_from_json(MINIMAL_JSON).unwrap();
+        let v = json_valid(&a3, 3);
         assert_eq!(v["sequence_preview"], "MAE");
         assert_eq!(v["sequence_length"], 6);
+    }
+
+    #[test]
+    fn wraps_long_metadata_values() {
+        let lines = wrap_words("one two three four", 9);
+        assert_eq!(lines, vec!["one two", "three", "four"]);
     }
 }

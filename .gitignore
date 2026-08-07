@@ -11,6 +11,9 @@ __dev/
 # Zed
 .zed/
 
+# Rust
+spec/conformance/generator/target/
+
 # Julia
 julia/RtemisA3/Manifest.toml
 

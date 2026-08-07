@@ -79,14 +79,15 @@ describe("annotation validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects missing annotations object", () => {
+  it("accepts a document with no annotations member (it is optional)", () => {
     const result = safeParseA3({
       $schema: A3_SCHEMA_URI,
       a3_version: A3_VERSION,
       sequence: "MKTAYIAKQR",
       metadata: {},
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.annotations.site).toEqual({});
   });
 
   it("accepts empty annotations object and defaults families to empty", () => {
@@ -287,7 +288,7 @@ describe("variant validation", () => {
       ...MINIMAL_VALID,
       annotations: {
         ...MINIMAL_VALID.annotations,
-        variant: [{ position: 3, from: "R", to: "H" }],
+        variant: [{ position: 3, from: "T", to: "H" }],
       },
     });
     expect(result.success).toBe(true);
@@ -307,15 +308,19 @@ describe("variant validation", () => {
     expect(result.success).toBe(false);
   });
 
-  it("rejects variant with non-JSON-compatible metadata", () => {
-    const result = safeParseA3({
-      ...MINIMAL_VALID,
-      annotations: {
-        ...MINIMAL_VALID.annotations,
-        variant: [{ position: 1, fn: () => {} }],
-      },
-    });
-    expect(result.success).toBe(false);
+  it("rejects variant with a non-JSON-compatible member", () => {
+    // Not a validation issue: no such value can come out of JSON.parse, so it
+    // has no A3 code. It is a constructor-path guard, and a TypeError is the
+    // idiomatic response to a value of the wrong kind.
+    expect(() =>
+      A3.fromData({
+        ...MINIMAL_VALID,
+        annotations: {
+          ...MINIMAL_VALID.annotations,
+          variant: [{ position: 1, fn: () => {} }],
+        },
+      }),
+    ).toThrow(TypeError);
   });
 
   it("rejects legacy variant: {} (must be an array)", () => {
@@ -328,14 +333,15 @@ describe("variant validation", () => {
 });
 
 describe("metadata validation", () => {
-  it("rejects missing metadata object", () => {
+  it("accepts a document with no metadata member (it is optional)", () => {
     const result = safeParseA3({
       $schema: A3_SCHEMA_URI,
       a3_version: A3_VERSION,
       sequence: "MKTAY",
       annotations: {},
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.metadata.uniprot_id).toBe("");
   });
 
   it("defaults all metadata fields to empty string when metadata is {}", () => {
@@ -389,82 +395,42 @@ describe("metadata validation", () => {
     expect(result.success).toBe(false);
   });
 
-  describe("uniprot_id validation", () => {
-    const parseWithUniprot = (uniprot_id: string) =>
-      safeParseA3({
+  it("accepts any string as metadata — metadata is free text", () => {
+    // A3 validates that these members are strings and nothing else. Checks on
+    // their *content* (is this a well-formed UniProt accession?) belong in a
+    // separate lint layer, so that "valid" keeps meaning "conforms to the
+    // published schema". See spec/README.md, "Validation is not linting".
+    for (const uniprot_id of ["P12345", "A0A0A0AAA1", "P10636-8", "MAPT", ""]) {
+      const result = safeParseA3({
         ...MINIMAL_VALID,
         metadata: { ...MINIMAL_VALID.metadata, uniprot_id },
       });
-
-    it.each([
-      ["P12345", "short form (P*)"],
-      ["O12345", "short form (O*)"],
-      ["Q9Y6K9", "short form (Q*)"],
-      ["A0A0A0AAA1", "long form (10 chars)"],
-      ["A0A024", "long form (6 chars)"],
-    ])("accepts %s — %s", (uniprot_id) => {
-      const result = parseWithUniprot(uniprot_id);
-      expect(result.success).toBe(true);
-    });
-
-    it.each([
-      ["P", "single character"],
-      ["P1", "too short"],
-      ["P12345X", "too long for short form"],
-      ["X12345", "X is reserved for long form, not short"],
-      ["p12345", "lowercase rejected"],
-      ["12345", "no leading letter"],
-    ])("rejects %s — %s", (uniprot_id) => {
-      const result = parseWithUniprot(uniprot_id);
-      expect(result.success).toBe(false);
-    });
-
-    it("trims whitespace before validating", () => {
-      const result = parseWithUniprot("  P12345  ");
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.metadata.uniprot_id).toBe("P12345");
-    });
+      expect(result.success, uniprot_id).toBe(true);
+      if (result.success) expect(result.data.metadata.uniprot_id).toBe(uniprot_id);
+    }
   });
 
-  describe("optional text metadata validation", () => {
-    const parseWithMeta = (metadata: Partial<A3Data["metadata"]>) =>
-      safeParseA3({
-        ...MINIMAL_VALID,
-        metadata: { ...MINIMAL_VALID.metadata, ...metadata },
-      });
-
-    it.each([
-      "description",
-      "reference",
-      "organism",
-    ] as const)("rejects single-character %s", (field) => {
-      const result = parseWithMeta({ [field]: "X" });
-      expect(result.success).toBe(false);
+  it("rejects a non-string metadata member", () => {
+    const result = safeParseA3({
+      ...MINIMAL_VALID,
+      metadata: { ...MINIMAL_VALID.metadata, uniprot_id: 10636 },
     });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.code).toBe("A3E_METADATA_FIELD_NOT_STRING");
+      expect(result.error.issues[0]?.path).toBe("/metadata/uniprot_id");
+    }
+  });
 
-    it.each([
-      "description",
-      "reference",
-      "organism",
-    ] as const)("accepts empty %s (field is optional)", (field) => {
-      const result = parseWithMeta({ [field]: "" });
-      expect(result.success).toBe(true);
+  it("does not trim metadata values", () => {
+    // Trimming would be a normalization, and normalization is exactly three
+    // rules: case-fold the sequence, sort positions, sort ranges.
+    const result = safeParseA3({
+      ...MINIMAL_VALID,
+      metadata: { ...MINIMAL_VALID.metadata, description: "  spaced  " },
     });
-
-    it.each([
-      "description",
-      "reference",
-      "organism",
-    ] as const)("accepts 2+ character %s", (field) => {
-      const result = parseWithMeta({ [field]: "ok" });
-      expect(result.success).toBe(true);
-    });
-
-    it("trims whitespace and treats whitespace-only as empty", () => {
-      const result = parseWithMeta({ description: "   " });
-      expect(result.success).toBe(true);
-      if (result.success) expect(result.data.metadata.description).toBe("");
-    });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.metadata.description).toBe("  spaced  ");
   });
 });
 

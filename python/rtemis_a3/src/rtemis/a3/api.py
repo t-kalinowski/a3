@@ -7,16 +7,18 @@ Pydantic models are never constructed directly.
 from __future__ import annotations
 
 import json
-from typing import Any, cast
+from typing import Any
 
 from pydantic import ValidationError
 
 from ._models import A3, VariantRecord, _BoundsErrors
+from ._validate import (
+    A3_SCHEMA_URI as _A3_SCHEMA_URI,
+    A3_VERSION as _A3_VERSION,
+    validate,
+)
 from .errors import A3ParseError, A3ValidationError
-
-_A3_SCHEMA_URI = "https://schema.rtemis.org/a3/v1/schema.json"
-_A3_VERSION = "1.0.0"
-_ENVELOPE_KEYS = frozenset({"$schema", "a3_version"})
+from .issues import A3Issue
 
 
 def create_a3(
@@ -77,17 +79,9 @@ def create_a3(
     if metadata is not None:
         data["metadata"] = metadata
 
-    try:
-        return A3.model_validate(data)
-    except _BoundsErrors as exc:
-        errors = [
-            {"loc": (), "msg": msg, "type": "value_error"} for msg in exc.messages
-        ]
-        raise A3ValidationError("\n".join(exc.messages), errors) from exc
-    except ValidationError as exc:
-        raise A3ValidationError(
-            str(exc), cast(list[dict[str, Any]], exc.errors())
-        ) from exc
+    data["$schema"] = _A3_SCHEMA_URI
+    data["a3_version"] = _A3_VERSION
+    return _validated(data)
 
 
 def a3_from_json(text: str) -> A3:
@@ -115,77 +109,80 @@ def a3_from_json(text: str) -> A3:
     except (json.JSONDecodeError, TypeError) as exc:
         raise A3ParseError(f"invalid JSON: {exc}") from exc
 
-    if not isinstance(data, dict):
-        raise A3ValidationError(
-            "JSON root must be an object",
-            [
-                {
-                    "loc": (),
-                    "msg": "JSON root must be an object",
-                    "type": "value_error",
-                    "input": data,
-                }
-            ],
-        )
-    envelope_errors: list[dict[str, Any]] = []
-    schema_val = data.get("$schema")
-    if schema_val is None:
-        envelope_errors.append(
-            {
-                "loc": ("$schema",),
-                "msg": "missing required field '$schema'",
-                "type": "missing",
-                "input": data,
-            }
-        )
-    elif schema_val != _A3_SCHEMA_URI:
-        envelope_errors.append(
-            {
-                "loc": ("$schema",),
-                "msg": f"'$schema' must be '{_A3_SCHEMA_URI}', got '{schema_val}'",
-                "type": "value_error",
-                "input": schema_val,
-            }
-        )
-    version_val = data.get("a3_version")
-    if version_val is None:
-        envelope_errors.append(
-            {
-                "loc": ("a3_version",),
-                "msg": "missing required field 'a3_version'",
-                "type": "missing",
-                "input": data,
-            }
-        )
-    elif version_val != _A3_VERSION:
-        envelope_errors.append(
-            {
-                "loc": ("a3_version",),
-                "msg": f"'a3_version' must be '{_A3_VERSION}', got '{version_val}'",
-                "type": "value_error",
-                "input": version_val,
-            }
-        )
-    if envelope_errors:
-        raise A3ValidationError(
-            "; ".join(e["msg"] for e in envelope_errors),
-            envelope_errors,
-        )
-    # Strip envelope keys before passing to the data model
-    for key in _ENVELOPE_KEYS:
-        data.pop(key, None)
+    return _validated(data)
+
+
+def _validated(raw: Any) -> A3:
+    """Run the staged validator, then build the typed model.
+
+    Splitting these two steps is what makes collect-all reporting possible.
+    Pydantic fails on the first shape problem and reports it in Pydantic's own
+    vocabulary; the staged validator in :mod:`._validate` reports every problem
+    in the failing stage, in A3's. By the time the model sees the data it is
+    known good, so the model's own validators act only as a backstop for the
+    constructor path.
+
+    Parameters
+    ----------
+    raw : Any
+        The output of :func:`json.loads`, or a dict assembled by
+        :func:`create_a3`.
+
+    Returns
+    -------
+    A3
+        Validated, immutable A3 object.
+
+    Raises
+    ------
+    A3ValidationError
+        If validation produced any issue.
+    """
+    normalized, issues = validate(raw)
+    if issues:
+        raise A3ValidationError(issues)
+    assert normalized is not None  # noqa: S101 — guaranteed when issues is empty
 
     try:
-        return A3.model_validate(data)
-    except _BoundsErrors as exc:
-        errors = [
-            {"loc": (), "msg": msg, "type": "value_error"} for msg in exc.messages
-        ]
-        raise A3ValidationError("\n".join(exc.messages), errors) from exc
-    except ValidationError as exc:
-        raise A3ValidationError(
-            str(exc), cast(list[dict[str, Any]], exc.errors())
+        return A3.model_validate(normalized)
+    except (_BoundsErrors, ValidationError) as exc:  # pragma: no cover
+        # Unreachable: the staged validator has already established every
+        # invariant the model checks. If this fires, the two have diverged.
+        raise AssertionError(
+            f"staged validation passed but the model rejected the result: {exc}"
         ) from exc
+
+
+def validate_a3(raw: Any) -> list[A3Issue]:
+    """Validate a parsed value without raising.
+
+    The non-throwing counterpart to :func:`a3_from_json`, for forms, reports,
+    and live-validation panels that need the full issue list rather than an
+    exception.
+
+    Parameters
+    ----------
+    raw : Any
+        A parsed A3 document, typically the result of :func:`json.loads`.
+
+    Returns
+    -------
+    list[A3Issue]
+        Every issue found in the earliest failing validation stage. Empty when
+        the document is valid.
+
+    Examples
+    --------
+    >>> import json
+    >>> from rtemis.a3 import validate_a3
+    >>> doc = json.loads(
+    ...     '{"$schema": "https://schema.rtemis.org/a3/v1/schema.json",'
+    ...     ' "a3_version": "1.0.0", "sequence": "MAEPRQ"}'
+    ... )
+    >>> validate_a3(doc)
+    []
+    """
+    return validate(raw)[1]
 
 
 def a3_to_json(a3: A3, *, indent: int | None = None) -> str:

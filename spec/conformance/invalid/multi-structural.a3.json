@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEP1Q",
+  "annotations": {
+    "site": {
+      "": {
+        "index": [
+          1
+        ]
+      },
+      "s": {
+        "type": "x"
+      }
+    },
+    "region": {
+      "r": {
+        "index": [
+          [
+            1,
+            3,
+            5
+          ]
+        ]
+      }
+    },
+    "variant": [
+      {
+        "from": "R"
+      }
+    ]
+  },
+  "metadata": {
+    "uniprot_id": 10636
+  }
+}

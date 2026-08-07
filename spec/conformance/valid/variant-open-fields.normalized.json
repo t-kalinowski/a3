@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "site": {},
+    "region": {},
+    "ptm": {},
+    "processing": {},
+    "variant": [
+      {
+        "position": 5,
+        "from": "R",
+        "to": "W",
+        "clinicalSignificance": "Pathogenic",
+        "evidence": {
+          "pmid": 12345,
+          "confirmed": true
+        },
+        "aliases": [
+          "R5W",
+          "p.Arg5Trp"
+        ],
+        "note": null
+      }
+    ]
+  },
+  "metadata": {
+    "uniprot_id": "",
+    "description": "",
+    "reference": "",
+    "organism": ""
+  }
+}

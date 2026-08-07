@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "site": {
+      "a/b": {
+        "index": [
+          99
+        ]
+      },
+      "a~b": {
+        "index": [
+          98
+        ]
+      },
+      "a.b": {
+        "index": [
+          97
+        ]
+      }
+    }
+  }
+}

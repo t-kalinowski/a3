@@ -97,7 +97,15 @@ describe("parseRanges", () => {
   it("rejects end < start", () => {
     const r = parseRanges("50-10");
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.error).toContain("end must be ≥ start");
+    if (!r.ok) expect(r.error).toContain("end must be > start");
+  });
+
+  it("rejects a single-residue range (end == start)", () => {
+    // A region must span at least two residues; a single position is a `site`.
+    // This matches the document schema's `start < end` refinement.
+    const r = parseRanges("5-5");
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("end must be > start");
   });
 });
 

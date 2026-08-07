@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - python/**
+      - spec/conformance/**
   push:
     branches:
       - main
     paths:
       - python/**
+      - spec/conformance/**
 
 permissions:
   contents: read

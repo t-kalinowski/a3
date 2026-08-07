@@ -179,3 +179,47 @@ import type {
 ## License
 
 [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/)
+
+## Validation
+
+Validation is **collect-all**. A document is checked in four stages — envelope,
+structural, intra-field, contextual — and every issue in the earliest failing
+stage is reported at once. Each issue carries a stable `code` and an
+[RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer `path`, both of
+which are identical across the R, Python, Julia, TypeScript, and Rust
+implementations of A3. Messages are for humans and are not contractual.
+
+```ts
+import { A3, A3ValidationError } from "@rtemis/a3";
+
+try {
+  const a3 = A3.fromJSONText(text);
+} catch (e) {
+  if (e instanceof A3ValidationError) {
+    console.log(e.stage); // 4
+    for (const issue of e.issues) {
+      console.log(issue.code, issue.path);
+      // A3E_POS_OUT_OF_BOUNDS /annotations/site/Active site/index/2
+    }
+  }
+}
+```
+
+For a form or a live-validation panel, use the non-throwing entry point and
+attach each issue to a field by its pointer:
+
+```ts
+import { validate, resolvePointer } from "@rtemis/a3";
+
+const { data, issues } = validate(JSON.parse(text));
+for (const issue of issues) {
+  const offending = resolvePointer(JSON.parse(text), issue.path);
+  // ... attach issue.message to the control that renders `offending`
+}
+```
+
+> **Note on 0.3.0.** `zod` is no longer a dependency and `A3InputSchema` is no
+> longer exported. The conformance contract requires exact `{code, path}` pairs
+> and four staged passes, which a general-purpose schema library cannot produce
+> without a translation layer that drifts. `A3ValidationIssue.path` was an array
+> of keys and is now a pointer string.

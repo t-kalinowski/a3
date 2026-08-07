@@ -95,3 +95,43 @@ A3
      ├── reference
      └── organism
 ```
+
+## Validation
+
+Validation is **collect-all**. A document is checked in four stages — envelope,
+structural, intra-field, contextual — and every issue in the earliest failing
+stage is reported at once. Each issue carries a stable `code` and an
+[RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer `path`, both of
+which are identical across the R, Python, Julia, TypeScript, and Rust
+implementations of A3. Messages are for humans and are not contractual.
+
+Two entry points, two behaviours, on purpose:
+
+| Entry point | Behaviour |
+|---|---|
+| `read_A3json(path)` | **collect-all** — aborts once with every issue in the failing stage |
+| `validate_A3json(path)` | **collect-all, non-throwing** — returns the issues as a data frame |
+| `create_A3(...)` | **fail-fast** — one corrective message, from the S7 validators |
+
+A 500-annotation document assembled from four public resources should not be
+fixed one error per run. A programmer who passed a bad argument wants one
+specific message immediately.
+
+```r
+validate_A3json("mapt.a3.json")
+#>                    code stage                              path                     message
+#> 1 A3E_POS_OUT_OF_BOUNDS     4 /annotations/site/Active/index/2  Position 999 is out of ...
+```
+
+`read_A3json()` attaches the issue list to the condition object, so it is
+reachable without parsing the message:
+
+```r
+issues <- tryCatch(
+  read_A3json("broken.a3.json"),
+  a3_validation_error = function(e) e[["issues"]]
+)
+```
+
+See [`spec/error-codes.md`](../spec/error-codes.md) for the full rule registry
+and [`spec/error-paths.md`](../spec/error-paths.md) for the path grammar.

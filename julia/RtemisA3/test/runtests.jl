@@ -1,6 +1,8 @@
 using Test
+using JSON
+using OrderedCollections
 using RtemisA3
-using RtemisA3: sort_dedup, sort_ranges, check_no_overlap, is_json_compatible
+using RtemisA3: sort_ranges, is_json_compatible, stage
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -26,23 +28,23 @@ end
 
 # ─── Normalization ────────────────────────────────────────────────────────────
 
-@testset "sort_dedup" begin
-    # sort_dedup is a normalization utility (future clean API), not a validator
-    @test sort_dedup([3, 1, 2, 2, 1]) == [1, 2, 3]
-    @test sort_dedup(Int[]) == Int[]
-    @test sort_dedup([5]) == [5]
-end
-
 @testset "sort_ranges" begin
+    # Normalization is total: it sorts, it never rejects. Overlap and ordering
+    # are validation's job, and both run after this sort.
     @test sort_ranges([(3, 5), (1, 2)]) == [(1, 2), (3, 5)]
     @test sort_ranges([(1, 4), (1, 2)]) == [(1, 2), (1, 4)]
+    @test sort_ranges([(12, 8), (3, 3)]) == [(3, 3), (12, 8)]
 end
 
-@testset "check_no_overlap" begin
-    @test check_no_overlap([(1, 3), (5, 7)], "x") === nothing
-    @test check_no_overlap([(1, 5), (6, 8)], "x") === nothing  # adjacent ok
-    val_err(() -> check_no_overlap([(1, 5), (5, 8)], "x"))      # touching = overlap
-    val_err(() -> check_no_overlap([(1, 5), (3, 8)], "x"))      # overlapping
+@testset "JSON Pointer construction" begin
+    # RFC 6901 escapes exactly two characters, and `~` must go before `/`.
+    @test RtemisA3.escape_token("a/b") == "a~1b"
+    @test RtemisA3.escape_token("a~b") == "a~0b"
+    @test RtemisA3.escape_token("a~1b") == "a~01b"
+    @test RtemisA3.escape_token("a.b") == "a.b"
+    @test RtemisA3.pointer("/annotations/site", "a/b") == "/annotations/site/a~1b"
+    @test RtemisA3.pointer("/annotations/site", "") == "/annotations/site/"
+    @test RtemisA3.pointer("/annotations/variant", 3) == "/annotations/variant/3"
 end
 
 @testset "is_json_compatible" begin
@@ -184,7 +186,7 @@ end
     @test length(a.annotations.variant) == 2
     @test a.annotations.variant[1].position == 3
     @test a.annotations.variant[1].extra["from"] == "E"
-    @test a.annotations.variant[2].extra == Dict{String,Any}()
+    @test isempty(a.annotations.variant[2].extra)
 
     # missing position
     val_err(() -> create_a3("MAEPRQ"; variant = [Dict("from" => "E")]))
@@ -192,8 +194,21 @@ end
     # position out of bounds
     val_err(() -> create_a3("MAEPRQ"; variant = [Dict("position" => 10)]))
 
-    # non-JSON-compatible extra field
-    val_err(() -> create_a3("MAEPRQ"; variant = [Dict("position" => 1, "fn" => x -> x)]))
+    # A non-JSON-compatible member is a construction-path guard, not a
+    # validation issue: no such value can come out of JSON.parse, so it has no
+    # A3 code.
+    @test_throws ArgumentError create_a3(
+        "MAEPRQ";
+        variant = [Dict("position" => 1, "fn" => x -> x)],
+    )
+
+    # The residue rule fires only when `from` is a single character that
+    # disagrees with the sequence. Residue 3 of MAEPRQ is E.
+    e = val_err(() -> create_a3("MAEPRQ"; variant = [Dict("position" => 3, "from" => "K")]))
+    @test [(i.code, i.path) for i in e.issues] == [("A3E_VARIANT_RESIDUE_MISMATCH", "/annotations/variant/0/from")]
+    # Absent, or of another shape, is not this rule's problem.
+    @test create_a3("MAEPRQ"; variant = [Dict("position" => 3, "from" => "Glu")]) isa A3
+    @test create_a3("MAEPRQ"; variant = [Dict("position" => 3, "from" => "e")]) isa A3
 end
 
 # ─── Metadata ─────────────────────────────────────────────────────────────────
@@ -330,16 +345,79 @@ end
 
 # ─── Error messages ───────────────────────────────────────────────────────────
 
-@testset "error messages" begin
+@testset "issues carry codes, paths, and messages" begin
     e = val_err(
         () -> create_a3("MAEPRQ"; site = Dict("x" => Dict("index" => [10], "type" => ""))),
     )
-    @test occursin("out of bounds", e.msg)
-    @test occursin("1-6", e.msg)
+    @test length(e.issues) == 1
+    @test e.issues[1].code == "A3E_POS_OUT_OF_BOUNDS"
+    @test e.issues[1].path == "/annotations/site/x/index/0"
+    @test stage(e) == 4
+    # The message is not contractual, but it must name the offending value.
+    @test occursin("out of bounds", e.issues[1].message)
+    @test occursin("1-6", e.issues[1].message)
 
     e2 = val_err(() -> create_a3("M1"))
-    @test occursin("invalid character", e2.msg)
+    @test [i.code for i in e2.issues] == ["A3E_SEQ_CHARSET"]
+    @test stage(e2) == 2
 
-    e3 = parse_err(() -> a3_from_json("{invalid json"))
-    @test e3 isa A3ParseError
+    # Length and charset are independent rules; a one-character digit trips both,
+    # and within a stage every issue is collected.
+    e3 = val_err(() -> create_a3("1"))
+    @test [i.code for i in e3.issues] == ["A3E_SEQ_TOO_SHORT", "A3E_SEQ_CHARSET"]
+
+    # A file that is not JSON has no path to report and nothing to collect.
+    @test parse_err(() -> a3_from_json("{invalid json")) isa A3ParseError
 end
+
+@testset "collect-all and staging" begin
+    # Both envelope members are wrong: a fail-fast implementation reports one.
+    e = val_err(
+        () -> A3(
+            OrderedDict(
+                "\$schema" => "urn:a3",
+                "a3_version" => "0.9.0",
+                "sequence" => "MA",
+            ),
+        ),
+    )
+    @test [(i.code, i.path) for i in e.issues] == [
+        ("A3E_ENVELOPE_SCHEMA_MISMATCH", "/\$schema"),
+        ("A3E_ENVELOPE_VERSION_MISMATCH", "/a3_version"),
+    ]
+
+    # A Stage 2 issue suppresses every would-be Stage 4 issue.
+    e2 = val_err(
+        () -> create_a3(
+            "MAEP1Q";
+            site = Dict("s" => Dict("index" => [90, 91, 92], "type" => "")),
+        ),
+    )
+    @test [i.code for i in e2.issues] == ["A3E_SEQ_CHARSET"]
+end
+
+@testset "annotations and metadata are optional" begin
+    a = A3(
+        OrderedDict(
+            "\$schema" => "https://schema.rtemis.org/a3/v1/schema.json",
+            "a3_version" => "1.0.0",
+            "sequence" => "MAEPRQ",
+        ),
+    )
+    @test a.sequence == "MAEPRQ"
+    @test isempty(a.annotations.site)
+    @test a.metadata.uniprot_id == ""
+end
+
+@testset "annotation name order is preserved" begin
+    text = """{"\$schema":"https://schema.rtemis.org/a3/v1/schema.json",
+               "a3_version":"1.0.0","sequence":"MAEPRQ",
+               "annotations":{"site":{"zeta":{"index":[1]},"alpha":{"index":[2]},
+                                      "Mu":{"index":[3]}}}}"""
+    a = a3_from_json(text)
+    @test collect(keys(a.annotations.site)) == ["zeta", "alpha", "Mu"]
+end
+
+# ─── Conformance ──────────────────────────────────────────────────────────────
+
+include("conformance.jl")

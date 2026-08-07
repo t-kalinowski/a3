@@ -244,3 +244,43 @@ not just the first one.
 ## License
 
 [MPL-2.0](https://www.mozilla.org/en-US/MPL/2.0/)
+
+## Validation
+
+Validation is **collect-all**. A document is checked in four stages — envelope,
+structural, intra-field, contextual — and every issue in the earliest failing
+stage is reported at once. Each issue carries a stable `code` and an
+[RFC 6901](https://www.rfc-editor.org/rfc/rfc6901) JSON Pointer `path`, both of
+which are identical across the R, Python, Julia, TypeScript, and Rust
+implementations of A3. Messages are for humans and are not contractual.
+
+```rust
+use rtemis_a3::a3_from_json;
+
+let err = a3_from_json(text).unwrap_err();
+assert_eq!(err.stage(), Some(4));
+for issue in err.issues() {
+    println!("{} {}", issue.code.code(), issue.path);
+    // A3E_POS_OUT_OF_BOUNDS /annotations/site/Active site/index/2
+}
+```
+
+The CLI emits the same structure, which makes it usable as the conformance
+oracle when debugging another implementation:
+
+```console
+$ a3 --json broken.a3.json
+{
+  "valid": false,
+  "stage": 4,
+  "issues": [
+    {
+      "code": "A3E_POS_OUT_OF_BOUNDS",
+      "path": "/annotations/site/Active site/index/2",
+      "message": "position 99 is out of bounds for a sequence of length 24 (must be 1-24)"
+    }
+  ]
+}
+```
+
+`--diagnose` is deprecated and ignored: every run is now a full diagnostic.

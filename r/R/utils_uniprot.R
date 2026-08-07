@@ -65,7 +65,7 @@ uniprot_to_A3 <- function(
 ) {
   check_scalar_character(accession, arg_name = "accession")
   check_scalar_character(base_url, arg_name = "base_url")
-  check_dependencies(c("httr", "jsonlite"))
+  check_dependencies("httr")
 
   # -- Fetch ----
   url <- paste0(base_url, "/", accession, ".json")
@@ -210,7 +210,7 @@ uniprot_to_A3 <- function(
         info[["dbSnp"]] <- paste(dbsnp_ids, collapse = ",")
       }
     }
-    A3Variant(position = A3Position(data = loc_start(f)), info = info)
+    A3Variant(position = clean_int(loc_start(f)), info = info)
   }
 
   # -- Dispatch features to families ----

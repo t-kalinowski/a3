@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.rtemis.org/a3/v1/schema.json",
+  "a3_version": "1.0.0",
+  "sequence": "MAEPRQEFEVMEDHAGTYGLGDRK",
+  "annotations": {
+    "variant": [
+      {
+        "position": 5,
+        "from": "R"
+      },
+      {
+        "position": 18,
+        "from": "y"
+      },
+      {
+        "position": 3,
+        "from": "Glu"
+      },
+      {
+        "position": 7
+      }
+    ]
+  }
+}

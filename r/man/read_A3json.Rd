@@ -15,7 +15,10 @@ read_A3json(filepath, verbosity = 1L)
 \code{A3} object.
 }
 \description{
-Read \code{A3} object from JSON file
+Validation is \strong{collect-all}: the document is checked in four stages and
+every issue in the earliest failing stage is reported at once, each with a
+stable code and an RFC 6901 JSON Pointer. Use \code{\link[=validate_A3json]{validate_A3json()}} for a
+non-throwing entry point that returns the issues instead.
 }
 \examples{
 a3 <- create_A3("MAEPRQEFEVMEDHAGTYGLGDRK", uniprot_id = "P10636")

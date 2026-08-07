@@ -5,11 +5,13 @@ on:
   pull_request:
     paths:
       - julia/**
+      - spec/conformance/**
   push:
     branches:
       - main
     paths:
       - julia/**
+      - spec/conformance/**
 
 permissions:
   contents: read

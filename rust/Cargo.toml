@@ -1,6 +1,6 @@
 [package]
 name = "rtemis-a3"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
 description = "Rust implementation of the A3 (Amino Acid Annotation) format — parse, validate, and inspect A3 JSON files"
@@ -19,6 +19,12 @@ path = "src/main.rs"
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 colored = "3"
+# Annotation names are author-supplied and their order is part of the document;
+# HashMap iteration order is nondeterministic, so serializing the same parsed
+# document twice would produce two different files.
+indexmap = { version = "2", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+# `preserve_order` keeps a parsed object's member order, which variant records
+# need: everything beyond `position` round-trips verbatim, in document order.
+serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"
