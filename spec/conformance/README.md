@@ -79,16 +79,10 @@ equality means:
 Object member order is significant. That is what makes these cases test
 normalization rather than merely test parsing.
 
-### Why structural, not byte-for-byte
-
-Byte-exactness would additionally pin indentation, line endings, trailing
-newlines, non-ASCII escaping, and number formatting across five JSON
-serializers, none of which agree today and several of which are not
-configurable. It would buy no guarantee that structural comparison with
-significant key order does not already give, and it would mean hand-rolling a
-serializer in at least two languages. Structural comparison with significant
-order is the strong assertion; byte-exactness is the same assertion plus
-whitespace politics.
+Not byte-for-byte: that would additionally pin indentation, line endings and
+number formatting across five serializers that do not agree and are not all
+configurable, for no guarantee that ordered structural comparison does not
+already give.
 
 ## The canonical form
 
@@ -135,31 +129,18 @@ and the generator can never drift.
 
 ### Where each expectation comes from
 
-Two kinds of expectation live in the generator, and the difference is the whole
-design:
+- **Expected issues are hand-declared.** They are the specification, so they
+  never come from an implementation — otherwise the corpus would be a snapshot
+  of one implementation rather than something it can be found wrong against.
+- **`normalized` companions are produced by the Rust implementation**, because
+  re-implementing the three normalization rules in the generator would make a
+  sixth normalizer. Producing is not defining: every companion is checked
+  against the canonical form above — member order, materialized defaults,
+  sequence differing only by case, indices sorted and in bounds, authored key
+  order intact — before it is written. A normalization bug fails generation
+  instead of entering the corpus as if it were the spec.
 
-- **Expected issues are hand-declared.** They are the specification. They never
-  come from an implementation, or the corpus would be a snapshot of one
-  implementation's behaviour rather than something every implementation —
-  including that one — can be found wrong against.
-- **`normalized` companions are *produced* by the Rust implementation.**
-  Something has to emit them, and re-implementing the three normalization rules
-  in the generator would create a sixth normalizer whose only qualification is
-  that it lives next to the corpus.
-
-Producing is not defining. The canonical form is specified above, in prose, and
-every companion is checked against those rules — stated in the generator
-independently of the code that produced it — before it is written: schema member
-order, all defaults materialized, the sequence differing from its source only by
-case, indices sorted and in bounds, and author-supplied key order preserved
-exactly. A normalization bug in the producer fails generation loudly instead of
-being written into the corpus as if it were the specification.
-
-Rust is the producer because the generator can link against it directly, and
-because `cargo` is already required to work on this repository — the contract
-should not need a toolchain that nothing else here needs. It is not a statement
-that Rust outranks the other four. See [`../README.md`](../README.md),
-"Who owns what".
+See [`../README.md`](../README.md), "Who owns what".
 
 ### What a good case looks like
 

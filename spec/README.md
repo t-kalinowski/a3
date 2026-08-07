@@ -1,112 +1,104 @@
 # A3 conformance contract
 
-This directory is the language-agnostic contract that the R, Python, Julia,
-TypeScript, and Rust implementations of A3 are held to. It is normative: where
-an implementation and this directory disagree, this directory is right.
+Normative. Where an implementation and this directory disagree, this directory
+is right.
 
 | File | What it fixes |
 |---|---|
-| [`error-codes.md`](error-codes.md) | The rule registry — one stable code per validation rule, its stage, and the value it points at |
-| [`error-paths.md`](error-paths.md) | The path grammar — every issue carries an RFC 6901 JSON Pointer |
-| [`conformance/`](conformance/) | The shared corpus every implementation is tested against |
+| [`error-codes.md`](error-codes.md) | one stable code per rule, its stage, the path it reports |
+| [`error-paths.md`](error-paths.md) | every issue carries an RFC 6901 JSON Pointer |
+| [`conformance/`](conformance/) | 72 cases every implementation is tested against |
 
-The JSON Schema itself lives at [`../schema/a3.schema.json`](../schema/a3.schema.json)
-and defines which documents are *valid*. This directory defines what an
-implementation must *say* when a document is not.
+[`../schema/a3.schema.json`](../schema/a3.schema.json) defines which documents
+are *valid*. This directory defines what an implementation must *say* when one
+is not.
 
-## What is contractual
+## Contractual
 
-Contractual — a conforming implementation must agree exactly:
+A conforming implementation must agree exactly on:
 
-- the set of `{code, path}` pairs produced for a given document
-- which stage each rule belongs to, and therefore which issues are suppressed
-  by an earlier-stage failure
+- the set of `{code, path}` pairs a document produces
+- each rule's stage, and therefore which issues an earlier failure suppresses
 - the normalized serialization of a valid document
 
-Not contractual — implementations may differ freely:
-
-- human-readable messages, their wording, punctuation, and language
-- the order in which issues are emitted (issue sets are compared as sets)
-- the type used to carry an issue (struct, dataclass, list, S7 object)
-- how issues are surfaced (thrown, returned, printed)
-
-Human messages are deliberately excluded. Tying five languages to one wording
-would freeze every message the first time the corpus is written and make
-improving a message a cross-language breaking change. Codes are stable so that
-programs can rely on them; messages are free so that humans can be served well.
+Free to differ: message wording, emission order, the type carrying an issue, and
+how it is surfaced. Messages are excluded so that improving one is not a
+cross-language breaking change.
 
 ## Who owns what
 
-Authority is split three ways, and no implementation is the specification.
+No implementation is the specification.
 
 | Artifact | Authority |
 |---|---|
-| What is **valid** | [`../schema/a3.schema.json`](../schema/a3.schema.json). A planned change makes the R S7 class declarations generate it, so **R owns the data model** — see "Provenance of the schema" below. |
-| What an implementation must **say** | This directory. Language-agnostic; no implementation privileged. |
-| The **canonical form** of a valid document | [`conformance/README.md`](conformance/README.md), in prose, machine-checked by the corpus generator. |
-| Human-readable **messages** | Nobody. Deliberately unowned, so improving one is not a cross-language breaking change. |
+| What is valid | the JSON Schema — and R owns the data model, since a planned change generates the schema from its S7 classes |
+| What to say | this directory |
+| The canonical form | [`conformance/README.md`](conformance/README.md), machine-checked by the corpus generator |
+| Messages | nobody, deliberately |
 
-A3 began in R, with S7. The Rust implementation later acquired a collect-all
-pass over raw JSON because the `a3` CLI needed a `--diagnose` mode that reports
-everything wrong with a file in one run — and that made it, by accident of the
-CLI's requirements, the implementation closest to the architecture this contract
-asks of all five. It is used as the corpus generator's *producer* of canonical
-forms for that reason and no other. Producing is not defining: every generated
-companion is checked against the rules stated above before it is written.
+A3 began in R. Rust later grew a collect-all pass over raw JSON because the CLI
+needed `--diagnose`, which made it the implementation closest to what this
+contract asks of all five — so the corpus generator uses it to *produce*
+canonical forms. Producing is not defining: every companion is checked against
+the rules above before it is written.
 
-(`--diagnose` is now deprecated, because every run in every implementation is a
-full diagnostic. The property that made Rust convenient became universal.)
+## Invariants that are easy to get wrong
 
-## Two entry points, two error behaviours
+- **Within a stage collect everything; across stages short-circuit.** A stage
+  runs only if every earlier one was clean. A bad `sequence` has no known
+  length, so Stage 4 would otherwise emit one spurious issue per position.
+- **A guard suppresses its own subtree only** — not its siblings.
+- **Per-element rules carry a subscript; whole-set rules do not.** A duplicate
+  is a property of the set, not of either position.
+- **Sorting is normalization; duplication is a rule.** There is no
+  `A3E_POS_UNSORTED`.
+- **Subscripts are 0-based; sequence positions are 1-based.**
+- **`3.0` is the position 3**; `2.5` is not a position, and `true` never is.
 
-Every implementation exposes two ways to get an A3 object, and they behave
-differently on purpose:
+## Two entry points
 
-| Entry point | Audience | On error |
-|---|---|---|
-| Reading a **document** (`read_A3json`, `a3_from_json`, `A3.fromJSONText`, `A3(::AbstractDict)`, `validate`) | someone handed a file assembled from public resources | **collect-all** — every issue in the earliest failing stage, reported at once |
-| Calling a **constructor** (`create_A3`, `create_a3`, `new A3(...)`, `A3(seq, ann, meta)`) | a programmer building an object in code | **fail-fast** — the first problem, with a corrective message |
+| Entry point | On error |
+|---|---|
+| reading a document — `read_A3json`, `a3_from_json`, `A3.fromJSONText`, `A3(::AbstractDict)` | **collect-all**: every issue in the earliest failing stage |
+| calling a constructor — `create_A3`, `create_a3`, `new A3(...)` | **fail-fast**: one corrective message |
 
-The reasoning: a 500-annotation document assembled from four databases should
-not be fixed one error per run, so document validation accumulates. A
-programmer who passed a bad argument wants an immediate, specific, corrective
-message, and there is no document to accumulate across. By the time an object
-is constructed from a document the raw pass has already run, so the
-constructor's checks never fire on that path — they are a backstop, not a
-duplicate.
-
-Each implementation's README states this split. It is a design feature, not an
-inconsistency, but only if it is stated.
+A 500-annotation document assembled from four databases should not be fixed one
+error per run. A programmer who passed a bad argument wants one specific
+message. Each README states this; keep it stated.
 
 ## Validation is not linting
 
-Validation answers exactly one question: *is this a legal A3 document?* Its
-sole authority is the JSON Schema. If a rule is not expressible in the schema,
-it does not belong in validation.
+Validation answers one question: *is this a legal A3 document?* Its sole
+authority is the schema. A check not expressible there does not belong in
+validation — so metadata members are free text, and A3 checks only that each is
+a string. Accession grammars and the like belong in an opt-in lint layer, which
+does not exist yet.
 
-There is a category of check that is useful but is not about legality — is this
-`uniprot_id` a well-formed accession, does this `organism` look like a species
-name, is this `reference` resolvable. Those belong in a separate, opt-in **lint**
-layer, so that "valid" keeps meaning "conforms to the published schema" and
-nothing more. No lint layer exists today; this note records where it goes if one
-is built, so the checks do not accrete into validation instead.
+Two rules are not directly expressible in JSON Schema and are in the registry
+anyway: the Stage 4 bounds rules, and `A3E_VARIANT_RESIDUE_MISMATCH`. Both are
+cross-field constraints on data the schema already declares, not opinions about
+free text. That is the line.
 
-Two exceptions are already in the registry and are worth naming, because they
-are the only rules not directly expressible in JSON Schema:
+## Changing a rule
 
-- the bounds rules (Stage 4), which compare an index against `sequence` length
-- `A3E_VARIANT_RESIDUE_MISMATCH`, which compares a variant's `from` residue
-  against the sequence
+1. Add or amend the code in [`error-codes.md`](error-codes.md), with its stage
+   and path.
+2. Add a case to `conformance/generator/` exercising it in isolation, then
+   `just corpus`.
+3. Implement it in **all five**. A rule that fires in one language and not the
+   others is worse than no rule.
+4. `just conformance` must pass in all five before merging.
 
-Both are *cross-field* constraints on data the schema already declares, not
-opinions about the content of a free-text field. That is the line.
+A meta-test fails if a registry code has no case, so step 2 cannot be skipped.
+Never change a code or a path without changing this directory and the corpus in
+the same commit.
 
-## Provenance of the schema
+## Known limitations
 
-`schema/a3.schema.json` is committed and is the artifact every implementation
-conforms to. A planned change (plan §7) makes it *generated* from the R S7 class
-declarations rather than hand-maintained. When that lands, regenerating the
-schema will require R — the Python, TypeScript, Julia, and Rust maintainers will
-not be able to regenerate it locally. That is acceptable because the generated
-artifact is committed and CI fails on drift, but it is stated here so nobody is
-surprised by it.
+- **JavaScript reorders integer-like keys.** An annotation named `"5"` is moved
+  ahead of other keys by JavaScript's object property-order rules, so
+  `@rtemis/a3` cannot round-trip it in document order. The other four can. Do
+  not "fix" this by sorting everywhere.
+- **Regenerating the schema will require R** once it is generated from the S7
+  classes. The artifact stays committed and CI fails on drift, so only
+  maintainers regenerating it are affected.
