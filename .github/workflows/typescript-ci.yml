@@ -53,3 +53,14 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      # JSR enforces rules `tsc` does not — chiefly "no slow types", which
+      # requires an explicit type on every exported symbol. Without this step
+      # those failures surface only on the publish job, after merge, when the
+      # release is already half-done.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Check JSR publishability
+        run: deno publish --dry-run
