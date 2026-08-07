@@ -165,7 +165,11 @@ escape_token(token::AbstractString) = replace(String(token), "~" => "~0", "/" =>
 """
     pointer(base, token) -> String
 
-Append one reference token (escaped) or array subscript (not) to a JSON Pointer.
+Append one reference token or array subscript to a JSON Pointer.
+
+`token` is a **raw** member name and is escaped here; an `Integer` subscript is
+not. Do not pre-escape a name: `pointer(b, "a~1b")` yields `"a~01b"`, because the
+`~` is escaped a second time.
 
 ```jldoctest
 julia> RtemisA3.pointer("/annotations/site", "a/b")

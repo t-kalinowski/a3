@@ -101,13 +101,15 @@ export function escapeToken(token: string): string {
  * Append one reference token or array subscript to a JSON Pointer.
  *
  * @param base - The pointer to extend. The empty string denotes the document root.
- * @param token - An object member name (escaped) or a 0-based array subscript (not).
+ * @param token - A **raw** object member name, which this function escapes, or a
+ *   0-based array subscript, which needs no escaping. Do not pre-escape a name:
+ *   `pointer(b, "a~1b")` yields `a~01b`, because the `~` is escaped a second time.
  *
  * @example
  * ```ts
- * pointer("/annotations/site", "a/b"); // "/annotations/site/a~1b"
- * pointer("", "$schema");              // "/$schema"
- * pointer("/annotations/variant", 3);  // "/annotations/variant/3"
+ * pointer("/annotations/site", "a/b"); // "/annotations/site/a~1b"  (escaped)
+ * pointer("", "$schema");              // "/$schema"                (nothing to escape)
+ * pointer("/annotations/variant", 3);  // "/annotations/variant/3"  (subscript)
  * ```
  */
 export function pointer(base: string, token: string | number): string {
