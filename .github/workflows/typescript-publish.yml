@@ -1,0 +1,97 @@
+name: TypeScript Publish (JSR)
+
+# Manual only. Nothing about this repo publishes on a push or a tag, and that is
+# deliberate — see __dev/ops.md. What CI buys here is not automation but
+# provenance: JSR mints a SLSA attestation in the Sigstore transparency log only
+# for packages published from GitHub Actions over OIDC. A `deno publish` from a
+# laptop cannot produce one, which is why the package scored 0/1 on provenance.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish — must equal typescript/jsr.json (e.g. 0.3.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  id-token: write # OIDC token authenticates to JSR and signs the attestation.
+
+# A second concurrent run would race the first to the same version.
+concurrency:
+  group: typescript-publish
+  cancel-in-progress: false
+
+jobs:
+  publish-jsr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: typescript
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          package_json_file: typescript/package.json
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: typescript/pnpm-lock.yaml
+
+      # The dispatch input is a confirmation, not a source of truth: without it
+      # this workflow would publish whatever version happens to be on the branch.
+      # A JSR version is never replaced once published, so the cost of finding
+      # out afterwards is high.
+      - name: Check the requested version is the one on this ref
+        env:
+          REQUESTED: ${{ inputs.version }}
+        run: |
+          npm_v="$(node -p "require('./package.json').version")"
+          jsr_v="$(node -p "require('./jsr.json').version")"
+          if [ "$npm_v" != "$jsr_v" ]; then
+            echo "::error::package.json is ${npm_v} but jsr.json is ${jsr_v}; they publish together"
+            exit 1
+          fi
+          if [ "$REQUESTED" != "$jsr_v" ]; then
+            echo "::error::you asked for ${REQUESTED} but this ref carries ${jsr_v}"
+            exit 1
+          fi
+          echo "publishing ${jsr_v}"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      # The same gates typescript-ci.yml runs. They passed on the PR, but this
+      # workflow can be dispatched against any ref, including one that never had
+      # a green run.
+      - name: Check
+        run: pnpm run check
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Test
+        run: pnpm test
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      # Deno resolves `@types/node` from node_modules, and pnpm's symlinked
+      # layout does not satisfy it. The lockfile this writes is gitignored, so
+      # it does not make the tree dirty for `deno publish`.
+      - name: Install for Deno
+        run: deno install
+
+      # No token and no secret: `deno publish` detects the Actions OIDC
+      # environment and authenticates as the linked repository. Provenance is
+      # automatic under these conditions — do not add `--no-provenance`.
+      # Already-published versions are a no-op rather than an error.
+      - name: Publish to JSR
+        run: deno publish
