@@ -11,6 +11,11 @@ __dev/
 # Zed
 .zed/
 
+# Deno — `deno install` writes these so `deno publish` can resolve @types/node.
+# The lockfile is deliberately not committed: it only ever pinned npm
+# devDependencies, went stale on every pnpm update, and broke publishing.
+typescript/deno.lock
+
 # Rust
 spec/conformance/generator/target/
 
