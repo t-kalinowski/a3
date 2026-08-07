@@ -83,6 +83,23 @@ Reading a **document** collects every issue; calling a **constructor** fails
 fast with one corrective message. That split is deliberate — see
 [`spec/README.md`](spec/README.md).
 
+## Development
+
+Recipes are in the [`justfile`](justfile); `just --list` shows them all.
+
+| | |
+|---|---|
+| `just test` | every suite in all five, reporting all five even when one fails |
+| `just conformance` | the shared corpus against all five |
+| `just corpus` | regenerate `spec/conformance/` from its generator |
+| `just check` | everything CI runs |
+
+Changing validation? Read [`spec/README.md`](spec/README.md) first — codes and
+paths are contractual, and a rule must land in all five at once.
+
+Releases are manual and unautomated; the five packages carry different version
+numbers but ship from one commit, tagged once for the Zenodo DOI.
+
 ## Licensing
 
 The R package is licensed `GPL (>= 3)`; it imports `rtemis.core`, which is

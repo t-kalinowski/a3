@@ -42,6 +42,18 @@ jobs:
           cache: pnpm
           cache-dependency-path: typescript/pnpm-lock.yaml
 
+      # npm and JSR publish together from one version. They silently drifted to
+      # 0.2.1 vs 0.1.8 once; this is cheaper than noticing at release time.
+      - name: Check npm and JSR versions agree
+        run: |
+          npm_v="$(node -p "require('./package.json').version")"
+          jsr_v="$(node -p "require('./jsr.json').version")"
+          if [ "$npm_v" != "$jsr_v" ]; then
+            echo "::error::package.json is ${npm_v} but jsr.json is ${jsr_v}; they publish together"
+            exit 1
+          fi
+          echo "npm and JSR agree at ${npm_v}"
+
       - name: Install
         run: pnpm install --frozen-lockfile
 
@@ -61,6 +73,11 @@ jobs:
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
+
+      # Deno resolves `@types/node` from node_modules, and pnpm's symlinked
+      # layout does not satisfy it. The lockfile this writes is not committed.
+      - name: Install for Deno
+        run: deno install
 
       - name: Check JSR publishability
         run: deno publish --dry-run
