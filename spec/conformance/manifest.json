@@ -197,7 +197,7 @@
       "file": "invalid/unknown-field-family.a3.json",
       "description": "An unpermitted annotation family.",
       "valid": false,
-      "stage": 2,
+      "stage": 2,4
       "issues": [
         {
           "code": "A3E_UNKNOWN_FIELD",

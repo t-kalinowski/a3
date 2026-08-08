@@ -15,6 +15,6 @@ path = "src/main.rs"
 # The reference implementation. The generator uses it to produce each
 # `normalized` companion, so normalization has five implementations rather than
 # six. Expected *issues* are hand-declared and never come from here — otherwise
-# the corpus would be a snapshot of Rust's behaviour rather than a spec.
+# the corpus would be a snapshot of Rust's behavior rather than a spec.
 rtemis-a3 = { path = "../../../rust" }
 serde_json = { version = "1", features = ["preserve_order"] }

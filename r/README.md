@@ -38,18 +38,17 @@ library(rtemis.a3)
 a3 <- create_A3(
   sequence = "MKTAYIAKQR",
   site = list(
-      "Active site" = annotation_position(c(3, 5),
-    ),
+    "Active site" = annotation_position(c(3L, 5L), type = "active site")
+  ),
   region = list(
     "Repeat 1" = annotation_range(rbind(c(1L, 4L)))
   ),
   ptm = list(
-    Phosphorylation = annotation_position(c(7))
+    Phosphorylation = annotation_position(c(7L))
   ),
-    uniprot_id  = "P12345",
-    description = "Example protein",
-    organism    = "Homo sapiens"
-  )
+  uniprot_id  = "P12345",
+  description = "Example protein",
+  organism    = "Homo sapiens"
 )
 ```
 
@@ -105,9 +104,9 @@ stage is reported at once. Each issue carries a stable `code` and an
 which are identical across the R, Python, Julia, TypeScript, and Rust
 implementations of A3. Messages are for humans and are not contractual.
 
-Two entry points, two behaviours, on purpose:
+Two entry points, two behaviors, on purpose:
 
-| Entry point | Behaviour |
+| Entry point | Behavior |
 |---|---|
 | `read_A3json(path)` | **collect-all** — aborts once with every issue in the failing stage |
 | `validate_A3json(path)` | **collect-all, non-throwing** — returns the issues as a data frame |

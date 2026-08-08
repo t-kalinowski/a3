@@ -28,11 +28,11 @@ Two decisions are already made and are not open for re-litigation:
 
 **Context that shapes everything below:** the five implementations were written
 by an earlier model and have not had a quality pass since. Assume idiom drift
-and missed opportunities, not just the divergences catalogued in §2 — §7A is a
+and missed opportunities, not just the divergences cataloged in §2 — §7A is a
 standing audit workstream for exactly this. Release friction is also low: every
 package except the CRAN build of `rtemis.a3` can be republished the same day
 (§7B). **Breaking changes are therefore cheap, and this plan should not preserve
-bug-compatibility with the current behaviour anywhere.** Where the right answer
+bug-compatibility with the current behavior anywhere.** Where the right answer
 and the current answer differ, take the right answer.
 
 **Order matters.** §4 (contract) blocks everything. Do not start §6
@@ -46,9 +46,9 @@ grammars a second time.
 | # | Item | Detail |
 |---|---|---|
 | H1 | **`specs/` does not exist** | `README.md` and root `AGENTS.md` both advertise `specs/A3.md`, `specs/A3_S7`, `specs/A3_Pydantic`, `specs/A3_Julia`, `specs/A3_Zod`, `specs/A3_Rust`. None of these files exist. Either write them or remove the references. Given §4 creates `spec/`, prefer: create the directory and make it real. |
-| H2 | **Licence disagreement** | R `DESCRIPTION` says `GPL (>= 3)`; Python, TypeScript and Rust all say `MPL-2.0`; Julia has a `LICENSE` file but no `license` field in `Project.toml`. Decide one, or document deliberately per-package. The journal checks this. |
-| H3 | **Julia `Project.toml` has no licence field** | Add it. |
-| H4 | **`examples/mapt.a3.json` modelling** | Disease variants are encoded as a `site` position list (57 entries) and the microtubule repeats as `site` positions rather than `region` ranges. Both validate, but this is the file that will be Figure 1b and Supplementary S4. See the manuscript skeleton §3.1 for the full list. Track separately from this plan. |
+| H2 | **License disagreement** | R `DESCRIPTION` says `GPL (>= 3)`; Python, TypeScript and Rust all say `MPL-2.0`; Julia has a `LICENSE` file but no `license` field in `Project.toml`. Decide one, or document deliberately per-package. The journal checks this. |
+| H3 | **Julia `Project.toml` has no license field** | Add it. |
+| H4 | **`examples/mapt.a3.json` modeling** | Disease variants are encoded as a `site` position list (57 entries) and the microtubule repeats as `site` positions rather than `region` ranges. Both validate, but this is the file that will be Figure 1b and Supplementary S4. See the manuscript skeleton §3.1 for the full list. Track separately from this plan. |
 | H5 | **Makefile has no `test-conformance` target** | Added in §8. |
 
 ---
@@ -176,7 +176,7 @@ this is not a redesign — it is porting a known-good design to three more.
 **Keep it.** S7 validators and Julia inner constructors stay fail-fast and stay
 exactly as they are. They are a backstop for programmatic construction
 (`create_A3(...)` called directly with bad arguments), where an immediate,
-friendly, corrective message is the right behaviour and there is no document to
+friendly, corrective message is the right behavior and there is no document to
 collect issues across. By the time an object is constructed from a *document*,
 the raw pass has already run and the data is known good, so the validators never
 fire on that path.
@@ -437,7 +437,7 @@ architecture), or map `ValidationError` → A3 issues. Do not let both escape.
 6. Minor cleanups while in there:
    - `A3Variant@position` is an `A3Position` (a whole index object) holding a
      single integer, with a validator asserting length 1. Consider a plain
-     integer property. Behaviour-neutral, reduces surprise.
+     integer property. Behavior-neutral, reduces surprise.
    - No `uniprot_id` validation (pending Q2).
    - `A3Annotation`'s validator uses `sapply(...)` over possibly-empty lists;
      `sapply(list(), ...)` returns `list()` and `all(list())` is `TRUE`, so it
@@ -603,7 +603,7 @@ S7_to_JSONSchema(A3, id = "https://schema.rtemis.org/a3/v1/schema.json", ...)
 breaking changes are in scope, and a hand-written schema that the typed
 declaration disagrees with is precisely the class of bug this change exists to
 eliminate. But every such diff must be **recorded in the PR and reflected in the
-conformance corpus**, because a schema change is a behaviour change for the
+conformance corpus**, because a schema change is a behavior change for the
 other four implementations. Expected candidates: absent `description` keywords,
 integer-vs-number widening, and the `propertyNames` constraint.
 
@@ -631,9 +631,9 @@ The implementations predate the current conventions and have not been reviewed
 since. Run one audit pass per language, in the same PR as that language's §6
 work — the file is already open, and a separate audit pass never happens.
 
-**This is not a licence to rewrite.** The audit produces a list; anything not
+**This is not a license to rewrite.** The audit produces a list; anything not
 touching correctness, the public API, or the conformance contract goes on the
-list and waits. What it must not do is quietly change behaviour the corpus is
+list and waits. What it must not do is quietly change behavior the corpus is
 about to pin down.
 
 ### Audit checklist, per language
@@ -706,7 +706,7 @@ should be shipped.
    Give the version of each package the manuscript describes, and state the
    canonical install channel per language. If CRAN lags at submission, cite
    r-universe as primary for R and note CRAN as also available — do not cite a
-   CRAN version whose behaviour differs from what the paper describes. Editors
+   CRAN version whose behavior differs from what the paper describes. Editors
    check these URLs and may install.
 3. **Version bump policy for this work.** The path-grammar change (§4.2) alters
    every error path, and the new rule (§6.6) rejects documents that previously
@@ -792,7 +792,7 @@ Two coupling notes:
 
 - **§7 must run early**, not late. Its risk is that generation disagrees with
   the committed schema; that surprise has to arrive before the corpus encodes
-  the old behaviour, not after.
+  the old behavior, not after.
 - **§7's R work and §6.5's R work land in the same package** and will conflict
   if run concurrently. Sequence them: props port and schema generation first,
   then `validate_a3_raw()` on top — the raw validator can then be written
@@ -812,9 +812,9 @@ The plan is done when:
 - [ ] All five implementations pass the full corpus in CI, in the same commit
 - [ ] Every valid case with a `normalized` companion round-trips identically in all five
 - [ ] `a3 --json` emits `{code, path, message}`
-- [ ] Each README documents the two entry points and their differing error behaviour (§3.4)
+- [ ] Each README documents the two entry points and their differing error behavior (§3.4)
 - [ ] The §2.3 table has no `?` and no unintended `❌`
-- [ ] Licences reconciled; `specs/` references resolved
+- [ ] Licenses reconciled; `specs/` references resolved
 - [ ] `jsonlite` moved to `Imports` in the R `DESCRIPTION`
 - [ ] An audit pass (§7A) is recorded for each of the five, with deferred items listed rather than silently dropped
 - [ ] A cross-language API correspondence table exists in the root README

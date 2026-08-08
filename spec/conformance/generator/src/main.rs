@@ -18,7 +18,7 @@
 //!
 //! - **Expected issues are hand-declared.** They are the specification. They
 //!   never come from an implementation, or the corpus would be a snapshot of
-//!   one implementation's behaviour rather than something every implementation
+//!   one implementation's behavior rather than something every implementation
 //!   — including that one — can be found wrong against.
 //! - **`normalized` companions are *produced* by the Rust implementation.**
 //!   Something has to emit them, and re-implementing the three normalization

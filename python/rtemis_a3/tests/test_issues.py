@@ -53,7 +53,7 @@ class TestPointer:
         # `bool` is a subclass of `int` in Python, so a bool takes the subscript
         # branch and formats as "True" rather than "1". Nonsense either way —
         # tokens are annotation names (str) or loop indices (int) — but pinned
-        # so the behaviour is known rather than discovered.
+        # so the behavior is known rather than discovered.
         assert pointer("", True) == "/True"
 
 

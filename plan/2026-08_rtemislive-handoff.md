@@ -105,7 +105,7 @@ const { data, issues } = validate(parsed);
 // data is null when issues is non-empty
 ```
 
-Two behaviours worth designing around:
+Two behaviors worth designing around:
 
 - **Issues come from one stage at a time.** Validation short-circuits at a stage
   boundary, so a document with a malformed `sequence` reports *only* that, not

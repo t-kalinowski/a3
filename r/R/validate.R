@@ -26,7 +26,7 @@
 #
 # The S7 validators are deliberately left alone: they are the backstop for
 # programmatic construction via `create_A3()`, where an immediate corrective
-# message is the right behaviour and there is no document to collect across.
+# message is the right behavior and there is no document to collect across.
 #
 # The full contract lives in spec/error-codes.md and spec/error-paths.md.
 # 2026- EDG rtemis.org
