@@ -3,7 +3,8 @@
 
 # RtemisA3 — Julia
 
-Julia implementation of the [A3 (Amino Acid Annotation) format](../specs/a3.md).
+Julia implementation of the
+[A3 (Amino Acid Annotation) format](../schema/a3.schema.json).
 
 ## Installation
 

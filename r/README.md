@@ -133,5 +133,7 @@ issues <- tryCatch(
 )
 ```
 
-See [`spec/error-codes.md`](../spec/error-codes.md) for the full rule registry
-and [`spec/error-paths.md`](../spec/error-paths.md) for the path grammar.
+See [`spec/error-codes.md`](https://github.com/rtemis-org/a3/blob/main/spec/error-codes.md)
+for the full rule registry and
+[`spec/error-paths.md`](https://github.com/rtemis-org/a3/blob/main/spec/error-paths.md)
+for the path grammar.

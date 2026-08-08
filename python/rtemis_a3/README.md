@@ -145,8 +145,10 @@ use `create_a3` or `a3_from_json` instead.
 
 ## Canonical Schema
 
-See [specs/a3.md](../specs/a3.md) for the language-agnostic specification and
-[specs/A3_Pydantic.md](../specs/A3_Pydantic.md) for Pydantic-specific design notes.
+See [`schema/a3.schema.json`](https://github.com/rtemis-org/a3/blob/main/schema/a3.schema.json)
+for the schema that defines which documents are valid, and
+[`spec/`](https://github.com/rtemis-org/a3/tree/main/spec) for the conformance
+contract shared by all five implementations.
 
 ## License
 
