@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: R S7 compatibility
+
+**R only.** A3 metadata now constructs its parent instance with development S7. S7 imports exclude `:=` to avoid a conflict with data.table.
+
 All five A3 implementations are released together from one commit whenever a
 change reaches the format, the validator, or the conformance corpus. Versions
 differ per package because each started from a different number. A change
