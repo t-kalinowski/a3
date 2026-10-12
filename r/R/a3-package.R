@@ -7,8 +7,8 @@
 #' @description
 #' Amino Acid Annotation format utilities
 #'
-#' @import cli data.table rtemis.core utils
-#' @rawNamespace import(S7, except = ":=")
+#' @import cli rtemis.core S7 utils
+#' @import data.table, except = ":="
 #' @importFrom stats na.exclude ave
 #' @importFrom grDevices col2rgb
 "_PACKAGE"

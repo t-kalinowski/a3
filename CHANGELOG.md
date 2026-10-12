@@ -2,7 +2,7 @@
 
 ## Unreleased: R S7 compatibility
 
-**R only.** A3 metadata now constructs its parent instance with development S7. S7 imports exclude `:=` to avoid a conflict with data.table.
+**R only.** A3 metadata now constructs its parent instance with development S7. data.table imports exclude `:=` so S7 provides the operator without an import conflict.
 
 All five A3 implementations are released together from one commit whenever a
 change reaches the format, the validator, or the conformance corpus. Versions
